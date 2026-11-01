@@ -41,7 +41,7 @@ It holds the folder `@alaydriem/heads`, with `alaydriem_heads.dll`, `alaydriem_h
 
 | Heads | Minecraft Bedrock | Mod Manager |
 | --- | --- | --- |
-| 0.1.0 | 1.26.60 | ABI 2.x |
+| 26.60.0 | 1.26.60 | ABI 2.x |
 
 ## Configuration
 
