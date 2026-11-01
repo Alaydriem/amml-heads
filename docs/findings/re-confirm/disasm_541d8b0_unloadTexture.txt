@@ -1,0 +1,45 @@
+; function 0x541d8b0..0x541d93f
+0x541d8b0  41 57                                         push r15
+0x541d8b2  41 56                                         push r14
+0x541d8b4  56                                            push rsi
+0x541d8b5  57                                            push rdi
+0x541d8b6  53                                            push rbx
+0x541d8b7  48 83 ec 20                                   sub rsp,0x20
+0x541d8bb  49 89 d6                                      mov r14,rdx
+0x541d8be  48 89 cf                                      mov rdi,rcx
+0x541d8c1  48 8d 99 a8 01 00 00                          lea rbx,[rcx+0x1a8]
+0x541d8c8  48 89 d9                                      mov rcx,rbx
+0x541d8cb  e8 a0 92 69 fb                                call 0xab6b70 ; fn
+0x541d8d0  48 89 c6                                      mov rsi,rax
+0x541d8d3  48 8b 8f 40 02 00 00                          mov rcx,[rdi+0x240]
+0x541d8da  48 85 c9                                      test rcx,rcx
+0x541d8dd  74 08                                         je short 0x541d8e7
+0x541d8df  4c 89 f2                                      mov rdx,r14
+0x541d8e2  e8 69 98 d0 fb                                call 0x1127150 ; fn
+0x541d8e7  4c 8b 3b                                      mov r15,[rbx]
+0x541d8ea  4c 39 fe                                      cmp rsi,r15
+0x541d8ed  74 3e                                         je short 0x541d92d
+0x541d8ef  4c 8d 76 20                                   lea r14,[rsi+0x20]
+0x541d8f3  48 8d 4e 58                                   lea rcx,[rsi+0x58]
+0x541d8f7  e8 e4 96 25 00                                call 0x5676fe0 ; fn
+0x541d8fc  48 8d 9f 30 02 00 00                          lea rbx,[rdi+0x230]
+0x541d903  48 89 d9                                      mov rcx,rbx
+0x541d906  4c 89 f2                                      mov rdx,r14
+0x541d909  e8 62 92 69 fb                                call 0xab6b70 ; fn
+0x541d90e  48 3b 87 30 02 00 00                          cmp rax,[rdi+0x230]
+0x541d915  74 16                                         je short 0x541d92d
+0x541d917  48 89 d9                                      mov rcx,rbx
+0x541d91a  48 89 c2                                      mov rdx,rax
+0x541d91d  e8 ee 4f d1 fa                                call 0x132910 ; fn
+0x541d922  48 89 d9                                      mov rcx,rbx
+0x541d925  48 89 c2                                      mov rdx,rax
+0x541d928  e8 93 97 d4 fb                                call 0x11670c0 ; fn
+0x541d92d  4c 39 fe                                      cmp rsi,r15
+0x541d930  0f 95 c0                                      setne al
+0x541d933  48 83 c4 20                                   add rsp,0x20
+0x541d937  5b                                            pop rbx
+0x541d938  5f                                            pop rdi
+0x541d939  5e                                            pop rsi
+0x541d93a  41 5e                                         pop r14
+0x541d93c  41 5f                                         pop r15
+0x541d93e  c3                                            ret

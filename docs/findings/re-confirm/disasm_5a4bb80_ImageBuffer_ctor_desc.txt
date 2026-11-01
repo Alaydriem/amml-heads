@@ -1,0 +1,80 @@
+; function 0x5a4bb80..0x5a4bc8f
+0x5a4bb80  55                                            push rbp
+0x5a4bb81  56                                            push rsi
+0x5a4bb82  57                                            push rdi
+0x5a4bb83  48 83 ec 40                                   sub rsp,0x40
+0x5a4bb87  48 8d 6c 24 40                                lea rbp,[rsp+0x40]
+0x5a4bb8c  48 c7 45 f8 fe ff ff ff                       mov qword ptr [rbp-8],0xfffffffffffffffe
+0x5a4bb94  48 89 d6                                      mov rsi,rdx
+0x5a4bb97  48 8d 05 72 bf 97 fa                          lea rax,[rip-0x568408e]
+0x5a4bb9e  48 89 01                                      mov [rcx],rax
+0x5a4bba1  48 8d 41 08                                   lea rax,[rcx+8]
+0x5a4bba5  48 89 45 e0                                   mov [rbp-0x20],rax
+0x5a4bba9  0f 57 c0                                      xorps xmm0,xmm0
+0x5a4bbac  0f 11 41 08                                   movups [rcx+8],xmm0
+0x5a4bbb0  0f 11 41 17                                   movups [rcx+0x17],xmm0
+0x5a4bbb4  48 89 4d e8                                   mov [rbp-0x18],rcx
+0x5a4bbb8  c7 41 28 01 00 00 00                          mov dword ptr [rcx+0x28],1
+0x5a4bbbf  48 8b 0d ea 05 8f 0c                          mov rcx,[rip+0xc8f05ea]
+0x5a4bbc6  48 8b 01                                      mov rax,[rcx]
+0x5a4bbc9  48 8b 40 10                                   mov rax,[rax+0x10]
+0x5a4bbcd  b2 53                                         mov dl,0x53
+0x5a4bbcf  ff 15 9b 33 f5 09                             call qword ptr [rip+0x9f5339b]
+0x5a4bbd5  88 45 f7                                      mov [rbp-9],al
+0x5a4bbd8  8b 46 10                                      mov eax,[rsi+0x10]
+0x5a4bbdb  48 8b 4d e8                                   mov rcx,[rbp-0x18]
+0x5a4bbdf  89 41 28                                      mov [rcx+0x28],eax
+0x5a4bbe2  0f 10 06                                      movups xmm0,[rsi]
+0x5a4bbe5  0f 11 41 18                                   movups [rcx+0x18],xmm0
+0x5a4bbe9  8b 16                                         mov edx,[rsi]
+0x5a4bbeb  44 8b 46 04                                   mov r8d,[rsi+4]
+0x5a4bbef  89 d0                                         mov eax,edx
+0x5a4bbf1  44 09 c0                                      or eax,r8d
+0x5a4bbf4  74 74                                         je short 0x5a4bc6a
+0x5a4bbf6  8b 4e 08                                      mov ecx,[rsi+8]
+0x5a4bbf9  8d 41 8b                                      lea eax,[rcx-0x75]
+0x5a4bbfc  83 f8 1b                                      cmp eax,0x1b
+0x5a4bbff  77 11                                         ja short 0x5a4bc12
+0x5a4bc01  41 b9 01 00 00 00                             mov r9d,1
+0x5a4bc07  e8 c4 d4 ff ff                                call 0x5a490d0 ; fn
+0x5a4bc0c  48 8b 4d e8                                   mov rcx,[rbp-0x18]
+0x5a4bc10  eb 50                                         jmp short 0x5a4bc62
+0x5a4bc12  31 c0                                         xor eax,eax
+0x5a4bc14  85 d2                                         test edx,edx
+0x5a4bc16  74 14                                         je short 0x5a4bc2c
+0x5a4bc18  45 85 c0                                      test r8d,r8d
+0x5a4bc1b  74 0f                                         je short 0x5a4bc2c
+0x5a4bc1d  44 0f af c2                                   imul r8d,edx
+0x5a4bc21  44 89 c7                                      mov edi,r8d
+0x5a4bc24  e8 37 0a 00 00                                call 0x5a4c660
+0x5a4bc29  0f af c7                                      imul eax,edi
+0x5a4bc2c  44 0f b6 4e 0d                                movzx r9d,byte ptr [rsi+0xd]
+0x5a4bc31  41 83 f9 01                                   cmp r9d,1
+0x5a4bc35  48 8b 4d e8                                   mov rcx,[rbp-0x18]
+0x5a4bc39  74 09                                         je short 0x5a4bc44
+0x5a4bc3b  41 83 f9 02                                   cmp r9d,2
+0x5a4bc3f  8b 56 10                                      mov edx,[rsi+0x10]
+0x5a4bc42  eb 05                                         jmp short 0x5a4bc49
+0x5a4bc44  ba 06 00 00 00                                mov edx,6
+0x5a4bc49  45 31 c0                                      xor r8d,r8d
+0x5a4bc4c  41 80 f9 03                                   cmp r9b,3
+0x5a4bc50  41 0f 94 c0                                   sete r8b
+0x5a4bc54  47 8d 04 80                                   lea r8d,[r8+r8*4]
+0x5a4bc58  41 ff c0                                      inc r8d
+0x5a4bc5b  0f af c2                                      imul eax,edx
+0x5a4bc5e  41 0f af c0                                   imul eax,r8d
+0x5a4bc62  89 c2                                         mov edx,eax
+0x5a4bc64  e8 17 b8 97 fa                                call 0x3c7480 ; fn
+0x5a4bc69  90                                            nop
+0x5a4bc6a  48 8b 0d 3f 05 8f 0c                          mov rcx,[rip+0xc8f053f]
+0x5a4bc71  48 8b 01                                      mov rax,[rcx]
+0x5a4bc74  48 8b 40 10                                   mov rax,[rax+0x10]
+0x5a4bc78  0f b6 55 f7                                   movzx edx,byte ptr [rbp-9]
+0x5a4bc7c  ff 15 ee 32 f5 09                             call qword ptr [rip+0x9f532ee]
+0x5a4bc82  90                                            nop
+0x5a4bc83  48 8b 45 e8                                   mov rax,[rbp-0x18]
+0x5a4bc87  48 83 c4 40                                   add rsp,0x40
+0x5a4bc8b  5f                                            pop rdi
+0x5a4bc8c  5e                                            pop rsi
+0x5a4bc8d  5d                                            pop rbp
+0x5a4bc8e  c3                                            ret

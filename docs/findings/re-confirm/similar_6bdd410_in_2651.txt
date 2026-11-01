@@ -1,0 +1,15 @@
+old function 0x6bdd410: strings 9  imports 1  constants 12  calls 35  size 5348
+  string "Creating skin info for: \n\t- Plyaer Entry UUID: {} \n\t- Player Name: {}\n\t-Is Persona: {}\n\t- Skin Name: {}"
+  string "[ClientSubId:{}] Received PlayerListPacketTypeRemove for active entity. Retaining skin until entity is removed."
+  string "[ClientSubId:{}] Removing Player: {}"
+  string "[ClientSubId:{}]PlayerListPacket - Adding entity to player list: {} - PlayerEntityList count: {}"
+  string "[ClientSubId:{}]Processing local player skin entry."
+  string "[ClientSubId:{}]Processing remote player skin entry."
+  string "false"
+  string "true"
+  string "{:08x}-{:04x}-{:04x}-{:04x}-{:08x}{:04x}"
+  import _invoke_watson
+candidates: 3
+0x1348a10  score 0.700  strings 9  imports 1  constants 11  size 6103
+0xb637640  score 0.409  strings 0  imports 1  constants 8  size 1163
+0x11ec1e0  score 0.400  strings 2  imports 1  constants 7  size 1675

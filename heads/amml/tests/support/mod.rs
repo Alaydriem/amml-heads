@@ -1,0 +1,25 @@
+mod fake_client;
+mod fake_font;
+mod fake_game;
+mod fake_geometry;
+mod fake_gui_message;
+mod fake_heap;
+mod fake_host;
+mod fake_memory;
+mod fake_packet;
+mod fake_rig;
+mod fake_skin;
+mod fake_waypoints;
+
+pub use fake_client::FakeClient;
+pub use fake_font::FakeFont;
+pub use fake_game::{FakeGame, GameCall};
+pub use fake_geometry::FakeGeometry;
+pub use fake_gui_message::FakeGuiMessage;
+pub use fake_heap::FakeHeap;
+pub use fake_host::FakeHost;
+pub use fake_memory::FakeMemory;
+pub use fake_packet::{FakeEntry, FakePacket};
+pub use fake_rig::FakeRig;
+pub use fake_skin::FakeSkin;
+pub use fake_waypoints::{ENTITY_VTABLE, FakeWaypoints, WaypointSpec};

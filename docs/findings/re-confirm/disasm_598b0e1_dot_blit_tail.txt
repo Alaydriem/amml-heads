@@ -1,0 +1,59 @@
+; function 0x598a9d0..0x598b1c1
+0x598b0e1  48 8b 40 08                                   mov rax,[rax+8]
+0x598b0e5  48 89 f1                                      mov rcx,rsi
+0x598b0e8  ff 15 82 3e 01 0a                             call qword ptr [rip+0xa013e82]
+0x598b0ee  e9 88 00 00 00                                jmp 0x598b17b
+0x598b0f3  48 8b 75 e8                                   mov rsi,[rbp-0x18]
+0x598b0f7  48 85 f6                                      test rsi,rsi
+0x598b0fa  0f 84 5c ff ff ff                             je 0x598b05c
+0x598b100  f0 ff 4e 08                                   lock dec dword ptr [rsi+8]
+0x598b104  0f 85 52 ff ff ff                             jne 0x598b05c
+0x598b10a  48 8b 06                                      mov rax,[rsi]
+0x598b10d  48 8b 00                                      mov rax,[rax]
+0x598b110  48 89 f1                                      mov rcx,rsi
+0x598b113  ff 15 57 3e 01 0a                             call qword ptr [rip+0xa013e57]
+0x598b119  f0 ff 4e 0c                                   lock dec dword ptr [rsi+0xc]
+0x598b11d  0f 85 39 ff ff ff                             jne 0x598b05c
+0x598b123  48 8b 06                                      mov rax,[rsi]
+0x598b126  48 8b 40 08                                   mov rax,[rax+8]
+0x598b12a  48 89 f1                                      mov rcx,rsi
+0x598b12d  ff 15 3d 3e 01 0a                             call qword ptr [rip+0xa013e3d]
+0x598b133  e9 24 ff ff ff                                jmp 0x598b05c
+0x598b138  48 8b 4d a8                                   mov rcx,[rbp-0x58]
+0x598b13c  48 85 c9                                      test rcx,rcx
+0x598b13f  75 0b                                         jne short 0x598b14c
+0x598b141  eb 38                                         jmp short 0x598b17b
+0x598b143  48 8b 4d d0                                   mov rcx,[rbp-0x30]
+0x598b147  48 85 c9                                      test rcx,rcx
+0x598b14a  74 2f                                         je short 0x598b17b
+0x598b14c  48 8b 51 08                                   mov rdx,[rcx+8]
+0x598b150  48 85 d2                                      test rdx,rdx
+0x598b153  74 1c                                         je short 0x598b171
+0x598b155  f0 ff 4a 0c                                   lock dec dword ptr [rdx+0xc]
+0x598b159  75 16                                         jne short 0x598b171
+0x598b15b  48 8b 02                                      mov rax,[rdx]
+0x598b15e  48 8b 40 08                                   mov rax,[rax+8]
+0x598b162  48 89 ce                                      mov rsi,rcx
+0x598b165  48 89 d1                                      mov rcx,rdx
+0x598b168  ff 15 02 3e 01 0a                             call qword ptr [rip+0xa013e02]
+0x598b16e  48 89 f1                                      mov rcx,rsi
+0x598b171  ba 20 00 00 00                                mov edx,0x20
+0x598b176  e8 85 99 fa 08                                call 0xe934b00
+0x598b17b  0f 28 75 00                                   movaps xmm6,[rbp]
+0x598b17f  0f 28 7d 10                                   movaps xmm7,[rbp+0x10]
+0x598b183  44 0f 28 45 20                                movaps xmm8,[rbp+0x20]
+0x598b188  44 0f 28 4d 30                                movaps xmm9,[rbp+0x30]
+0x598b18d  44 0f 28 55 40                                movaps xmm10,[rbp+0x40]
+0x598b192  44 0f 28 5d 50                                movaps xmm11,[rbp+0x50]
+0x598b197  44 0f 28 65 60                                movaps xmm12,[rbp+0x60]
+0x598b19c  44 0f 28 6d 70                                movaps xmm13,[rbp+0x70]
+0x598b1a1  44 0f 28 b5 80 00 00 00                       movaps xmm14,[rbp+0x80]
+0x598b1a9  44 0f 28 bd 90 00 00 00                       movaps xmm15,[rbp+0x90]
+0x598b1b1  48 81 c4 28 01 00 00                          add rsp,0x128
+0x598b1b8  5b                                            pop rbx
+0x598b1b9  5f                                            pop rdi
+0x598b1ba  5e                                            pop rsi
+0x598b1bb  41 5e                                         pop r14
+0x598b1bd  41 5f                                         pop r15
+0x598b1bf  5d                                            pop rbp
+0x598b1c0  c3                                            ret

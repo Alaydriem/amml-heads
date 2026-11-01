@@ -1,0 +1,6 @@
+old function 0x541f580: strings 0  imports 1  constants 5  calls 30  size 3197
+  import _invoke_watson
+candidates: 3
+0x1d0cfd0  score 1.000  strings 0  imports 1  constants 5  size 3185
+0x5968850  score 1.000  strings 0  imports 1  constants 5  size 7508
+0x7ddb710  score 0.833  strings 0  imports 1  constants 4  size 3203

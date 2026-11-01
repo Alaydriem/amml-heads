@@ -1,0 +1,5 @@
+old function 0x6bdec10: strings 0  imports 0  constants 2  calls 2  size 623
+candidates: 3
+0x5b9a1b0  score 0.500  strings 0  imports 0  constants 1  size 846
+0x61a03b0  score 0.500  strings 0  imports 0  constants 1  size 866
+0x431b050  score 0.500  strings 0  imports 0  constants 1  size 411

@@ -1,0 +1,50 @@
+; function 0x1d0df40..0x1d0dff3
+0x1d0df40  55                                            push rbp
+0x1d0df41  56                                            push rsi
+0x1d0df42  57                                            push rdi
+0x1d0df43  48 81 ec a0 00 00 00                          sub rsp,0xa0
+0x1d0df4a  48 8d ac 24 80 00 00 00                       lea rbp,[rsp+0x80]
+0x1d0df52  48 c7 45 18 fe ff ff ff                       mov qword ptr [rbp+0x18],0xfffffffffffffffe
+0x1d0df5a  48 89 d6                                      mov rsi,rdx
+0x1d0df5d  48 89 cf                                      mov rdi,rcx
+0x1d0df60  48 8d 05 84 eb 29 0d                          lea rax,[rip+0xd29eb84]
+0x1d0df67  48 89 45 00                                   mov [rbp],rax
+0x1d0df6b  48 c7 45 08 00 00 00 00                       mov qword ptr [rbp+8],0
+0x1d0df73  48 8d 4d a8                                   lea rcx,[rbp-0x58]
+0x1d0df77  4c 89 45 10                                   mov [rbp+0x10],r8
+0x1d0df7b  4c 89 c2                                      mov rdx,r8
+0x1d0df7e  41 b0 01                                      mov r8b,1
+0x1d0df81  e8 ca 05 e0 02                                call 0x4b0e550 ; fn
+0x1d0df86  4c 8d 45 a8                                   lea r8,[rbp-0x58]
+0x1d0df8a  49 89 e9                                      mov r9,rbp
+0x1d0df8d  48 89 f9                                      mov rcx,rdi
+0x1d0df90  48 89 f2                                      mov rdx,rsi
+0x1d0df93  e8 38 0a 00 00                                call 0x1d0e9d0 ; fn
+0x1d0df98  48 89 c6                                      mov rsi,rax
+0x1d0df9b  48 8b 7d b0                                   mov rdi,[rbp-0x50]
+0x1d0df9f  48 85 ff                                      test rdi,rdi
+0x1d0dfa2  74 2b                                         je short 0x1d0dfcf
+0x1d0dfa4  f0 ff 4f 08                                   lock dec dword ptr [rdi+8]
+0x1d0dfa8  75 25                                         jne short 0x1d0dfcf
+0x1d0dfaa  48 8b 07                                      mov rax,[rdi]
+0x1d0dfad  48 8b 00                                      mov rax,[rax]
+0x1d0dfb0  48 89 f9                                      mov rcx,rdi
+0x1d0dfb3  ff 15 ef da 3e 0d                             call qword ptr [rip+0xd3edaef]
+0x1d0dfb9  f0 ff 4f 0c                                   lock dec dword ptr [rdi+0xc]
+0x1d0dfbd  75 10                                         jne short 0x1d0dfcf
+0x1d0dfbf  48 8b 07                                      mov rax,[rdi]
+0x1d0dfc2  48 8b 40 08                                   mov rax,[rax+8]
+0x1d0dfc6  48 89 f9                                      mov rcx,rdi
+0x1d0dfc9  ff 15 d9 da 3e 0d                             call qword ptr [rip+0xd3edad9]
+0x1d0dfcf  48 8b 45 10                                   mov rax,[rbp+0x10]
+0x1d0dfd3  48 8b 48 08                                   mov rcx,[rax+8]
+0x1d0dfd7  48 85 c9                                      test rcx,rcx
+0x1d0dfda  74 09                                         je short 0x1d0dfe5
+0x1d0dfdc  48 8b 00                                      mov rax,[rax]
+0x1d0dfdf  ff 15 c3 da 3e 0d                             call qword ptr [rip+0xd3edac3]
+0x1d0dfe5  48 89 f0                                      mov rax,rsi
+0x1d0dfe8  48 81 c4 a0 00 00 00                          add rsp,0xa0
+0x1d0dfef  5f                                            pop rdi
+0x1d0dff0  5e                                            pop rsi
+0x1d0dff1  5d                                            pop rbp
+0x1d0dff2  c3                                            ret

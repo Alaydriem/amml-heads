@@ -1,0 +1,36 @@
+; function 0xe01ef80..0xe01f01e
+0xe01ef80  48 89 5c 24 18                                mov [rsp+0x18],rbx
+0xe01ef85  57                                            push rdi
+0xe01ef86  48 81 ec b0 00 00 00                          sub rsp,0xb0
+0xe01ef8d  48 8b 05 ec b0 7b 03                          mov rax,[rip+0x37bb0ec]
+0xe01ef94  48 33 c4                                      xor rax,rsp
+0xe01ef97  48 89 84 24 a0 00 00 00                       mov [rsp+0xa0],rax
+0xe01ef9f  48 8b fa                                      mov rdi,rdx
+0xe01efa2  48 8b d9                                      mov rbx,rcx
+0xe01efa5  48 89 54 24 28                                mov [rsp+0x28],rdx
+0xe01efaa  48 8d 4c 24 30                                lea rcx,[rsp+0x30]
+0xe01efaf  e8 dc 0e 01 00                                call 0xe02fe90
+0xe01efb4  90                                            nop
+0xe01efb5  4c 8b c3                                      mov r8,rbx
+0xe01efb8  48 8b d7                                      mov rdx,rdi
+0xe01efbb  48 8d 4c 24 30                                lea rcx,[rsp+0x30]
+0xe01efc0  e8 2b 0f 01 00                                call 0xe02fef0 ; fn
+0xe01efc5  90                                            nop
+0xe01efc6  48 8d 05 83 80 58 00                          lea rax,[rip+0x588083]
+0xe01efcd  48 89 44 24 30                                mov [rsp+0x30],rax
+0xe01efd2  48 8d 4c 24 70                                lea rcx,[rsp+0x70]
+0xe01efd7  e8 54 dc ff ff                                call 0xe01cc30 ; fn
+0xe01efdc  48 8d 4c 24 50                                lea rcx,[rsp+0x50]
+0xe01efe1  e8 4a dc ff ff                                call 0xe01cc30 ; fn
+0xe01efe6  48 8d 4c 24 38                                lea rcx,[rsp+0x38]
+0xe01efeb  e8 c0 13 00 00                                call 0xe0203b0 ; fn
+0xe01eff0  48 8d 4c 24 30                                lea rcx,[rsp+0x30]
+0xe01eff5  e8 66 06 01 00                                call 0xe02f660
+0xe01effa  48 8b c7                                      mov rax,rdi
+0xe01effd  48 8b 8c 24 a0 00 00 00                       mov rcx,[rsp+0xa0]
+0xe01f005  48 33 cc                                      xor rcx,rsp
+0xe01f008  e8 73 d8 01 00                                call 0xe03c880 ; fn
+0xe01f00d  48 8b 9c 24 d0 00 00 00                       mov rbx,[rsp+0xd0]
+0xe01f015  48 81 c4 b0 00 00 00                          add rsp,0xb0
+0xe01f01c  5f                                            pop rdi
+0xe01f01d  c3                                            ret
