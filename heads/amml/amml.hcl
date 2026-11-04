@@ -64,3 +64,17 @@ entries = [
   "ImageBuffer.mSize",
   "ResourceLocation.size",
 ]
+
+listing {
+  title       = "Heads"
+  summary     = "Player skin faces on the locator bar and in chat."
+  description = <<-EOT
+    View player heads in chat and in the locator bar. Works with both skin files and creator skins.
+  EOT
+  authors     = ["Charles R. Portwood II"]
+  license     = "BSD-3-Clause"
+  source      = "https://github.com/alaydriem/amml-heads"
+  homepage    = "https://github.com/alaydriem/amml-heads#readme"
+  tags        = ["skins", "locator-bar", "chat", "client", "visual"]
+  icon        = "icon.png"
+}

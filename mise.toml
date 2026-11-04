@@ -27,7 +27,7 @@ dir = "{{config_root}}"
 run = "cargo bench -p heads-bench --bench heads --"
 
 [tasks.package]
-description = "Builds dist/@alaydriem/heads/ (alaydriem_heads.dll, alaydriem_heads.pdb, amml.hcl), the release artifact"
+description = "Builds dist/@alaydriem/heads/ (alaydriem_heads.dll, alaydriem_heads.pdb, amml.hcl, icon.png), the release artifact"
 dir = "{{config_root}}"
 shell = "bash -c"
 run = '''
@@ -38,9 +38,10 @@ mkdir -p dist/@alaydriem/heads
 cp target/release/alaydriem_heads.dll dist/@alaydriem/heads/alaydriem_heads.dll
 cp target/release/alaydriem_heads.pdb dist/@alaydriem/heads/alaydriem_heads.pdb
 cp heads/amml/amml.hcl dist/@alaydriem/heads/amml.hcl
+cp heads/amml/icon.png dist/@alaydriem/heads/icon.png
 echo "built dist/@alaydriem/heads"
 count=$(ls dist/@alaydriem/heads | wc -l)
-if [ "$count" -ne 3 ]; then echo "expected 3 files in dist/@alaydriem/heads, found $count"; exit 1; fi
+if [ "$count" -ne 4 ]; then echo "expected 4 files in dist/@alaydriem/heads, found $count"; exit 1; fi
 ls -l dist/@alaydriem/heads
 '''
 
