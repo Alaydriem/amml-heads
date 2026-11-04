@@ -1,14 +1,13 @@
 use alaydriem_heads::services::{ChatRuntime, ChatState, PacketObserver};
-use alaydriem_heads::structs::PacketOffsets;
 use crossbeam_channel::{Receiver, bounded};
 use heads_core::services::GlyphPage;
 use heads_core::structs::{ChatLine, FaceImage, FaceUpdate, MessageKind};
 
-use crate::support::{FakeEntry, FakePacket, FakeSkin};
+use crate::support::{FakeEntry, FakeLayout, FakePacket, FakeSkin};
 
 fn observer(capacity: usize) -> (PacketObserver, Receiver<FaceUpdate>) {
     let (sender, receiver) = bounded(capacity);
-    (PacketObserver::new(sender, PacketOffsets::new(0xD8, 0xD0, 0xA8, 0x80, 0xF8)), receiver)
+    (PacketObserver::new(sender, FakeLayout::packet_offsets()), receiver)
 }
 
 fn add<'a>(n: u8, actor: i64, skin: &'a FakeSkin) -> FakeEntry<'a> {
@@ -128,8 +127,7 @@ fn full_channel_skips_extracting_the_skin() {
 
 fn chat_observer() -> (PacketObserver, Receiver<FaceUpdate>) {
     let (sender, receiver) = bounded(8);
-    let offsets = PacketOffsets::new_with_chat(0xD8, 0xD0, 0xA8, 0x80, 0xF8, 0x20, 0x40);
-    (PacketObserver::new(sender, offsets), receiver)
+    (PacketObserver::new(sender, FakeLayout::packet_offsets_with_chat()), receiver)
 }
 
 fn install_chat_state() {
@@ -227,7 +225,7 @@ fn an_add_dropped_by_a_full_channel_still_makes_a_shared_name_give_no_head() {
     let skin = FakeSkin::rgba(64, 64, [10, 20, 30, 255]);
     let packet = FakePacket::player_list_named(&[add(4, 1, &skin), add(6, 2, &skin)], &[("x", "1"), ("Steve", "")]);
     let (sender, receiver) = bounded(1);
-    let observer = PacketObserver::new(sender, PacketOffsets::new_with_chat(0xD8, 0xD0, 0xA8, 0x80, 0xF8, 0x20, 0x40));
+    let observer = PacketObserver::new(sender, FakeLayout::packet_offsets_with_chat());
     // SAFETY: the fake packet and skin live for the call and match the 26.60 layout.
     unsafe { observer.on_player_list(packet.addr()) };
 

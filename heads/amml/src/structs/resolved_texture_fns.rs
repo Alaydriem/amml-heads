@@ -7,7 +7,7 @@ pub struct ResolvedTextureFns {
     pub image_buffer_ctor: usize,
     /// `TextureGroup::uploadTexture(ResourceLocation const&, cg::ImageBuffer)`.
     pub upload: usize,
-    /// `TextureGroupBase::getTexture`, called on the group plus 0x18.
+    /// `TextureGroupBase::getTexture`, called on the group plus `TextureLayout::group_base`.
     pub get: usize,
     /// `TextureGroup::unloadTexture(ResourceLocation const&, bool)`.
     pub unload: usize,

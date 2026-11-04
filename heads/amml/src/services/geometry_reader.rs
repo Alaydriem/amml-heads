@@ -8,7 +8,6 @@ use amml_msvc::{MsvcHeap, MsvcString};
 use heads_core::services::GeometryHeadLocator;
 
 use super::{MemoryReader, StdStringReader};
-use crate::layouts::SerializedSkinLayout;
 use crate::structs::{GeometryRead, PacketOffsets};
 
 type ToStyledStringFn = unsafe extern "C" fn(usize, *mut MsvcString) -> *mut MsvcString;
@@ -54,13 +53,15 @@ impl GeometryReader {
             return None;
         }
         let started = Instant::now();
-        // SAFETY: the name is a std::string member of the live SerializedSkinImpl.
-        let name =
-            unsafe { StdStringReader::text(element + SerializedSkinLayout::DEFAULT_GEOMETRY_NAME, Self::MAX_NAME) }
-                .unwrap_or_default();
+        let name = offsets.skin.default_geometry_name.map(|offset| {
+            // SAFETY: the name is a std::string member of the live SerializedSkinImpl.
+            unsafe { StdStringReader::text(element + offset, Self::MAX_NAME) }.unwrap_or_default()
+        });
         // SAFETY: mGeometryData is a Json::Value member of the live SerializedSkinImpl.
-        let json = unsafe { self.styled_string(element.checked_add(offsets.geometry_data)?) };
-        let head = json.as_deref().and_then(|json| GeometryHeadLocator::locate(json, &name));
+        let json = unsafe { self.styled_string(element.checked_add(offsets.skin.geometry_data)?) };
+        // without the name offset the geometry head locator is off, and the skin keeps its classic head
+        let head =
+            json.as_deref().zip(name.as_deref()).and_then(|(json, name)| GeometryHeadLocator::locate(json, name));
         let animated_head = json.as_deref().filter(|_| animated).and_then(GeometryHeadLocator::locate_animated_face);
         self.note(started.elapsed());
         Some(GeometryRead { head, animated_head, json })

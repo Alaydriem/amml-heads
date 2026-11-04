@@ -1,5 +1,5 @@
 [tasks.preflight]
-description = "Names a missing Rust toolchain or cargo-nextest before a build turns it into an obscure error"
+description = "Names a missing toolchain or tool before a build turns it into an obscure error"
 dir = "{{config_root}}"
 run = [
   "rustc --version",
@@ -8,7 +8,7 @@ run = [
 ]
 
 [tasks.check]
-description = "cargo check, clippy with warnings denied, and rustfmt check over the workspace"
+description = "Compiles, runs clippy with warnings denied and checks formatting"
 dir = "{{config_root}}"
 run = [
   "cargo check --workspace --all-targets",
@@ -17,7 +17,7 @@ run = [
 ]
 
 [tasks.test]
-description = "Every workspace test through cargo-nextest"
+description = "Every test through cargo nextest run"
 dir = "{{config_root}}"
 run = "cargo nextest run --workspace"
 
@@ -26,29 +26,39 @@ description = "Criterion benches for the per-frame hot paths; arguments narrow t
 dir = "{{config_root}}"
 run = "cargo bench -p heads-bench --bench heads --"
 
-[tasks.build-mod]
-description = "Builds the AMML mod into dist/@alaydriem/heads (alaydriem_heads.dll, its pdb and amml.hcl)"
+[tasks.package]
+description = "Builds dist/@alaydriem/heads/ (alaydriem_heads.dll, alaydriem_heads.pdb, amml.hcl), the release artifact"
 dir = "{{config_root}}"
 shell = "bash -c"
 run = '''
 set -e
 cargo build --release -p heads-amml
-rm -rf dist/alaydriem-heads
+rm -rf dist/alaydriem-heads dist/@alaydriem/heads
 mkdir -p dist/@alaydriem/heads
 cp target/release/alaydriem_heads.dll dist/@alaydriem/heads/alaydriem_heads.dll
 cp target/release/alaydriem_heads.pdb dist/@alaydriem/heads/alaydriem_heads.pdb
 cp heads/amml/amml.hcl dist/@alaydriem/heads/amml.hcl
 echo "built dist/@alaydriem/heads"
-'''
-
-[tasks.package]
-description = "Builds the mod and checks that dist/@alaydriem/heads holds exactly the dll, the pdb and amml.hcl"
-depends = ["build-mod"]
-dir = "{{config_root}}"
-shell = "bash -c"
-run = '''
-set -e
 count=$(ls dist/@alaydriem/heads | wc -l)
 if [ "$count" -ne 3 ]; then echo "expected 3 files in dist/@alaydriem/heads, found $count"; exit 1; fi
 ls -l dist/@alaydriem/heads
+'''
+
+[tasks.install]
+description = "Runs package, then copies dist/@alaydriem/heads into mods/amml/@alaydriem/heads of an AMML instance under %LOCALAPPDATA%/amml/instances (--instance, default 1.26.60.05). The mod's config/ stays. Close the game first: a running game locks the DLL"
+depends = ["package"]
+dir = "{{config_root}}"
+shell = "bash -c"
+usage = '''
+flag "--instance <name>" default="1.26.60.05" help="The instance folder under %LOCALAPPDATA%/amml/instances"
+'''
+run = '''
+set -e
+[ -n "$LOCALAPPDATA" ] || { echo "LOCALAPPDATA is not set; the instances live under %LOCALAPPDATA%/amml/instances"; exit 1; }
+instance="$LOCALAPPDATA/amml/instances/${usage_instance:-1.26.60.05}"
+[ -f "$instance/Minecraft.Windows.exe" ] || { echo "no instance at $instance"; exit 1; }
+target="$instance/mods/amml/@alaydriem/heads"
+mkdir -p "$target"
+cp -r dist/@alaydriem/heads/. "$target/"
+echo "installed dist/@alaydriem/heads -> $target"
 '''

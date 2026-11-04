@@ -5,4 +5,5 @@ mod entries;
 mod heads_mod;
 mod layouts;
 mod services;
+mod structs;
 mod support;

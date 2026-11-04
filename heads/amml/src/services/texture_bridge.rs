@@ -4,7 +4,7 @@ use amml_msvc::MsvcHeap;
 use heads_core::structs::FaceImage;
 
 use crate::layouts::{ImageDescriptionLayout, PathViewLayout, ResourceLocationLayout, TexturePtrLayout};
-use crate::structs::{GameTexture, ResolvedTextureFns};
+use crate::structs::{GameTexture, ResolvedTextureFns, TextureLayout};
 
 type LocationCtorFn =
     unsafe extern "C" fn(*mut ResourceLocationLayout, *const PathViewLayout) -> *mut ResourceLocationLayout;
@@ -20,6 +20,7 @@ type UnloadFn = unsafe extern "C" fn(usize, *const ResourceLocationLayout, u8) -
 /// every name it has ever seen, so reusing names keeps that map bounded. A name returns to the pool on unload.
 pub struct TextureBridge {
     fns: ResolvedTextureFns,
+    layout: TextureLayout,
     free: Vec<u8>,
     locations: Vec<Option<Box<ResourceLocationLayout>>>,
     page_location: Option<Box<ResourceLocationLayout>>,
@@ -27,19 +28,14 @@ pub struct TextureBridge {
 
 impl TextureBridge {
     pub const POOL: usize = 128;
-    // `getTexture` runs on the group plus this offset (the TextureGroupBase subobject)
-    const GET_TEXTURE_OFFSET: usize = 0x18;
-    // `ImageBuffer` layout: deleter, data, size, then the description
-    const BUFFER_WORDS: usize = 6;
-    const BUFFER_DATA: usize = 1;
-    const BUFFER_SIZE: usize = 2;
     const PAGE_SIDE: u32 = 256;
     // the chat glyph page the font system loads by this name
     const PAGE_NAME: &'static str = "font/glyph_E1";
 
-    pub fn new(fns: ResolvedTextureFns) -> Self {
+    pub fn new(fns: ResolvedTextureFns, layout: TextureLayout) -> Self {
         Self {
             fns,
+            layout,
             free: (0..Self::POOL as u8).rev().collect(),
             locations: (0..Self::POOL).map(|_| None).collect(),
             page_location: None,
@@ -76,11 +72,11 @@ impl TextureBridge {
         }
 
         let mut ptr = Box::new(TexturePtrLayout::empty());
-        // SAFETY: `get` is the resolved getTexture with this signature; `group + 0x18` is the base the game expects,
-        // `ptr` is a writable empty TexturePtr and `location` outlives the call.
+        // SAFETY: `get` is the resolved getTexture with this signature; the group plus `group_base` is the base the
+        // game expects, `ptr` is a writable empty TexturePtr and `location` outlives the call.
         unsafe {
             let get: GetFn = std::mem::transmute::<usize, GetFn>(self.fns.get);
-            get(group + Self::GET_TEXTURE_OFFSET, &mut *ptr, location, 0, 0, 0);
+            get(group + self.layout.group_base(), &mut *ptr, location, 0, 0, 0);
         }
         let texture = GameTexture::new(ptr, slot);
         // SAFETY: `texture` is a view of the pointer the game just filled, or an empty one.
@@ -120,21 +116,22 @@ impl TextureBridge {
 
     fn upload_pixels(&self, group: usize, location: *const ResourceLocationLayout, side: u32, pixels: &[u8]) -> bool {
         let description = ImageDescriptionLayout::face(side);
-        let mut buffer = [0usize; Self::BUFFER_WORDS];
+        let mut buffer = [0usize; TextureLayout::BUFFER_CAPACITY_WORDS];
         // SAFETY: `image_buffer_ctor` is the resolved ImageBuffer(ImageDescription const&) with this signature, and
-        // `buffer` is the 0x30 bytes it constructs into.
+        // `buffer` holds the `buffer_words` words it constructs into (`TextureLayout::new` keeps them within it).
         unsafe {
             let ctor: ImageBufferCtorFn = std::mem::transmute::<usize, ImageBufferCtorFn>(self.fns.image_buffer_ctor);
             ctor(buffer.as_mut_ptr(), &description);
         }
-        let data = buffer[Self::BUFFER_DATA] as *mut u8;
+        let data = buffer[self.layout.data_word()] as *mut u8;
         if data.is_null() {
             return false;
         }
-        if buffer[Self::BUFFER_SIZE] != pixels.len() {
-            if buffer[0] != 0 {
+        if buffer[self.layout.size_word()] != pixels.len() {
+            let deleter = buffer[self.layout.deleter_word()];
+            if deleter != 0 {
                 // SAFETY: a non-zero deleter is the blob deleter the constructor stored for `data`.
-                unsafe { std::mem::transmute::<usize, BlobDeleterFn>(buffer[0])(data) };
+                unsafe { std::mem::transmute::<usize, BlobDeleterFn>(deleter)(data) };
             }
             return false;
         }
@@ -164,7 +161,7 @@ impl TextureBridge {
             let mut location = Box::new(ResourceLocationLayout::zeroed());
             let view = PathViewLayout::new(Self::PAGE_NAME);
             // SAFETY: `ctor_address` is the resolved ResourceLocation(PathView) with this signature; it builds into
-            // the zeroed 0x38 byte buffer and copies the name.
+            // the zeroed buffer, whose size `TextureLayout::new` matched to the entry, and copies the name.
             unsafe {
                 let ctor: LocationCtorFn = std::mem::transmute::<usize, LocationCtorFn>(ctor_address);
                 ctor(&mut *location, &view);
@@ -183,7 +180,7 @@ impl TextureBridge {
             let name = format!("heads/slot_{slot}");
             let view = PathViewLayout::new(&name);
             // SAFETY: `ctor_address` is the resolved ResourceLocation(PathView) with this signature; it builds into
-            // the zeroed 0x38 byte buffer and copies the name.
+            // the zeroed buffer, whose size `TextureLayout::new` matched to the entry, and copies the name.
             unsafe {
                 let ctor: LocationCtorFn = std::mem::transmute::<usize, LocationCtorFn>(ctor_address);
                 ctor(&mut *location, &view);

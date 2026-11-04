@@ -62,7 +62,7 @@ whatever is at that place.
 
 ## Building
 
-Requires Windows x64, [mise](https://mise.jdx.dev), rustup and [cargo-nextest](https://nexte.st). The `amml` and `modmanager-amml` repos must sit next to this one.
+Requires Windows x64, [mise](https://mise.jdx.dev), rustup and [cargo-nextest](https://nexte.st). No sibling checkout is needed: cargo fetches `amml` and `amml-modmanager` at the release tag named in `Cargo.toml`.
 
 ```powershell
 mise trust

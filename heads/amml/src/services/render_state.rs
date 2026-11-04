@@ -143,7 +143,7 @@ impl RenderState {
     /// Ends a frame: puts the waypoint colours back and unloads the textures released this frame.
     pub fn after_render(&mut self) {
         // SAFETY: the waypoints tagged in `before_render` are alive; the render thread cannot have freed them.
-        unsafe { WaypointTagger::restore(&mut self.frame) };
+        unsafe { WaypointTagger::restore(&mut self.frame, &self.access.waypoints) };
         self.unload_deferred();
         self.release_group();
         self.drop_locations_when_idle();
@@ -265,13 +265,13 @@ impl RenderState {
         if player == 0 {
             return;
         }
-        // SAFETY: the player is live; the waypoint list head sits 0x10 into its client locator bar.
-        let Some(head) = (unsafe { MemoryReader::read::<usize>(player + self.access.locator_bar_offset + 0x10) })
-        else {
+        let head_at = player + self.access.locator_bar_offset + self.access.waypoints.list_head;
+        // SAFETY: the player is live; the waypoint list head pointer is inside its client locator bar.
+        let Some(head) = (unsafe { MemoryReader::read::<usize>(head_at) }) else {
             return;
         };
         // SAFETY: the list belongs to the live local player and is only changed on this thread.
-        unsafe { WaypointTagger::tag(head, self.access.entity_vtable, &mut self.frame) };
+        unsafe { WaypointTagger::tag(head, self.access.entity_vtable, &self.access.waypoints, &mut self.frame) };
     }
 
     // The texture group address for this frame, or 0 when the client has none. The shared_ptr is held until the
@@ -311,7 +311,7 @@ impl Drop for RenderState {
     fn drop(&mut self) {
         // a disable during a tagged frame must not leave tag colours in the waypoints
         // SAFETY: the waypoints tagged in `before_render` are alive; the state is dropped on the render thread.
-        unsafe { WaypointTagger::restore(&mut self.frame) };
+        unsafe { WaypointTagger::restore(&mut self.frame, &self.access.waypoints) };
         self.release_group();
     }
 }

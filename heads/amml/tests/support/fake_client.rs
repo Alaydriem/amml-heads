@@ -1,6 +1,6 @@
 use alaydriem_heads::structs::ClientAccess;
 
-use super::{ENTITY_VTABLE, FakeGame, FakeMemory};
+use super::{ENTITY_VTABLE, FakeGame, FakeLayout, FakeMemory};
 
 const LOCATOR_BAR_OFFSET: usize = 0xEF0;
 const GET_LOCAL_PLAYER_SLOT: usize = 3;
@@ -47,6 +47,12 @@ impl FakeClient {
     }
 
     pub fn access(&self) -> ClientAccess {
-        ClientAccess::new(GET_LOCAL_PLAYER_SLOT, GET_TEXTURE_GROUP_SLOT, LOCATOR_BAR_OFFSET, ENTITY_VTABLE)
+        ClientAccess::new(
+            GET_LOCAL_PLAYER_SLOT,
+            GET_TEXTURE_GROUP_SLOT,
+            LOCATOR_BAR_OFFSET,
+            ENTITY_VTABLE,
+            FakeLayout::waypoints(),
+        )
     }
 }

@@ -2,10 +2,10 @@ use alaydriem_heads::services::{PacketObserver, SkinDiagnostics};
 use alaydriem_heads::structs::{PacketOffsets, SkinReport};
 use crossbeam_channel::bounded;
 
-use crate::support::{FakeEntry, FakePacket, FakeSkin};
+use crate::support::{FakeEntry, FakeLayout, FakePacket, FakeSkin};
 
 fn offsets() -> PacketOffsets {
-    PacketOffsets::new(0xD8, 0xD0, 0xA8, 0x80, 0xF8)
+    FakeLayout::packet_offsets()
 }
 
 fn many_players(count: u8, skin: &FakeSkin) -> FakePacket {

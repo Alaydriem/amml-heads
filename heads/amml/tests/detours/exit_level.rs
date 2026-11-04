@@ -4,10 +4,11 @@ use std::sync::atomic::Ordering;
 
 use alaydriem_heads::detours::exit_level;
 use alaydriem_heads::services::{ChatRuntime, ChatState, HeadsRuntime, PacketObserver};
-use alaydriem_heads::structs::PacketOffsets;
 use crossbeam_channel::bounded;
 use heads_core::services::GlyphPage;
 use heads_core::structs::FaceUpdate;
+
+use crate::support::FakeLayout;
 
 extern "C" fn fake_original(_this: usize) {}
 
@@ -16,7 +17,7 @@ fn leaving_the_world_sends_clear_and_runs_the_original() {
     exit_level::GUARD.original().store(fake_original as *const () as *mut c_void, Ordering::Release);
     let runtime = HeadsRuntime::install(Path::new("."));
     let (sender, receiver) = bounded(8);
-    runtime.set_observer(PacketObserver::new(sender, PacketOffsets::new(0xD8, 0xD0, 0xA8, 0x80, 0xF8)));
+    runtime.set_observer(PacketObserver::new(sender, FakeLayout::packet_offsets()));
 
     exit_level::detour(0x88);
 

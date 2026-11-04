@@ -33,8 +33,8 @@ fn actor_id_needs_the_entity_vtable() {
     let addr = memory.addr();
     // SAFETY: the buffer is a 0x98 byte fake waypoint that lives for the call.
     unsafe {
-        assert_eq!(ClientWaypointLayout::actor_id(addr, 0xF13DFD0), Some(4242));
-        assert_eq!(ClientWaypointLayout::actor_id(addr, 0xF114660), None);
-        assert_eq!(ClientWaypointLayout::actor_id(0, 0xF13DFD0), None);
+        assert_eq!(ClientWaypointLayout::actor_id(addr, 0xF13DFD0, 0x78), Some(4242));
+        assert_eq!(ClientWaypointLayout::actor_id(addr, 0xF114660, 0x78), None);
+        assert_eq!(ClientWaypointLayout::actor_id(0, 0xF13DFD0, 0x78), None);
     }
 }

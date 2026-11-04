@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
 
 use super::{MemoryReader, StdStringReader};
-use crate::layouts::{ImageLayout, SerializedSkinLayout};
+use crate::layouts::ImageLayout;
 use crate::structs::{PacketOffsets, SkinEvent, SkinReport};
 use heads_core::structs::UvRect;
 
@@ -33,8 +33,8 @@ impl SkinDiagnostics {
     /// Reads what the skin behind a `SerializedSkinRef` holds. `None` when a link is null.
     ///
     /// # Safety
-    /// `skin_ref` must be null or the address of a live `shared_ptr` to a `SerializedSkinImpl` laid out as the
-    /// 26.60 header says; the packet detour that holds the skin guarantees it for the call.
+    /// `skin_ref` must be null or the address of a live `shared_ptr` to a `SerializedSkinImpl` laid out as
+    /// `offsets` says; the packet detour that holds the skin guarantees it for the call.
     pub unsafe fn inspect(skin_ref: usize, offsets: &PacketOffsets) -> Option<SkinReport> {
         // SAFETY: the caller guarantees `skin_ref` is null or a live shared_ptr, whose first word is the element.
         let element: usize = unsafe { MemoryReader::read(skin_ref)? };
@@ -42,16 +42,25 @@ impl SkinDiagnostics {
             return None;
         }
         // SAFETY: the element is a live SerializedSkinImpl and `skin_image` is inside it.
-        let image: ImageLayout = unsafe { MemoryReader::read(element.checked_add(offsets.skin_image)?)? };
+        let image: ImageLayout = unsafe { MemoryReader::read(element.checked_add(offsets.skin.image)?)? };
         let expected = u64::from(image.width) * u64::from(image.height) * 4;
         // SAFETY: the flags and strings are inside the live SerializedSkinImpl.
         let (is_premium, is_persona, default_geometry, resource_patch_len, animated_types) = unsafe {
             (
-                MemoryReader::read::<u8>(element + SerializedSkinLayout::IS_PREMIUM).is_some_and(|flag| flag != 0),
-                MemoryReader::read::<u8>(element + SerializedSkinLayout::IS_PERSONA).is_some_and(|flag| flag != 0),
-                Self::string(element + SerializedSkinLayout::DEFAULT_GEOMETRY_NAME),
-                Self::string_len(element + SerializedSkinLayout::RESOURCE_PATCH),
-                Self::animated_types(element),
+                offsets
+                    .skin
+                    .is_premium
+                    .is_some_and(|offset| MemoryReader::read::<u8>(element + offset).is_some_and(|flag| flag != 0)),
+                offsets
+                    .skin
+                    .is_persona
+                    .is_some_and(|offset| MemoryReader::read::<u8>(element + offset).is_some_and(|flag| flag != 0)),
+                offsets
+                    .skin
+                    .default_geometry_name
+                    .map_or_else(|| "<unavailable>".to_string(), |offset| Self::string(element + offset)),
+                offsets.skin.resource_patch.map_or(0, |offset| Self::string_len(element + offset)),
+                Self::animated_types(element, offsets),
             )
         };
         Some(SkinReport {
@@ -73,6 +82,9 @@ impl SkinDiagnostics {
     /// # Safety
     /// As for `inspect`, for `event.skin_ref`.
     pub unsafe fn record(&self, event: &SkinEvent, offsets: &PacketOffsets) {
+        if offsets.skin.resource_patch.is_none() || offsets.skin.is_premium.is_none() {
+            return;
+        }
         if self.logged.load(Ordering::Relaxed) >= Self::LOG_LIMIT || !self.claim(event.uuid) {
             return;
         }
@@ -144,22 +156,21 @@ impl SkinDiagnostics {
     }
 
     // the mType of each element of mSkinAnimatedImages, at most MAX_ANIMATED of them
-    unsafe fn animated_types(element: usize) -> Vec<u32> {
-        // SAFETY: the vector is a member of the live SerializedSkinImpl.
-        let Some([first, last]) =
-            (unsafe { MemoryReader::read::<[usize; 2]>(element + SerializedSkinLayout::ANIMATED_IMAGES) })
-        else {
+    unsafe fn animated_types(element: usize, offsets: &PacketOffsets) -> Vec<u32> {
+        let Some(animated) = offsets.skin.animated.as_ref() else {
             return Vec::new();
         };
-        if first == 0 || last < first {
+        // SAFETY: the vector is a member of the live SerializedSkinImpl.
+        let Some([first, last]) = (unsafe { MemoryReader::read::<[usize; 2]>(element + animated.list) }) else {
+            return Vec::new();
+        };
+        if first == 0 || last < first || animated.stride == 0 {
             return Vec::new();
         }
-        let count = ((last - first) / SerializedSkinLayout::ANIMATED_IMAGE_SIZE).min(Self::MAX_ANIMATED);
+        let count = ((last - first) / animated.stride).min(Self::MAX_ANIMATED);
         (0..count)
             .filter_map(|index| {
-                let address = first
-                    + index * SerializedSkinLayout::ANIMATED_IMAGE_SIZE
-                    + SerializedSkinLayout::ANIMATED_IMAGE_TYPE;
+                let address = first + index * animated.stride + animated.kind;
                 // SAFETY: the element lies inside the live vector.
                 unsafe { MemoryReader::read::<u32>(address) }
             })

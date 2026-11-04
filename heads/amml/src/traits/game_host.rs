@@ -17,4 +17,7 @@ pub trait GameHost {
     fn warn(&self, message: &str);
 
     fn info(&self, message: &str);
+
+    // a feature turned off because an entry is missing or unusable; the loader log shows it as an error
+    fn error(&self, message: &str);
 }

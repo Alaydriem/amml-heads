@@ -2,7 +2,7 @@ use std::cell::Cell;
 
 use alaydriem_heads::services::ChatFontCheck;
 
-use super::FakeMemory;
+use super::{FakeLayout, FakeMemory};
 
 const GET_FONT_HANDLE_SLOT: usize = 2;
 
@@ -14,7 +14,7 @@ extern "C" fn get_font_handle(client: usize, out: *mut usize) -> *mut usize {
     // SAFETY: the fake client holds its default font at +8; `out` is a writable FontHandle buffer.
     unsafe {
         let font = ((client + 8) as *const usize).read();
-        out.add(ChatFontCheck::DEFAULT_FONT / 8).write(font);
+        out.add(FakeLayout::FONT_HANDLE_DEFAULT_FONT / 8).write(font);
     }
     out
 }
@@ -50,7 +50,14 @@ impl FakeFont {
     }
 
     pub fn check() -> ChatFontCheck {
-        ChatFontCheck::new(GET_FONT_HANDLE_SLOT, font_handle_dtor as *const () as usize, Self::BITMAP_VTABLE)
+        ChatFontCheck::new(
+            GET_FONT_HANDLE_SLOT,
+            font_handle_dtor as *const () as usize,
+            Self::BITMAP_VTABLE,
+            FakeLayout::FONT_HANDLE_SIZE,
+            FakeLayout::FONT_HANDLE_DEFAULT_FONT,
+        )
+        .unwrap()
     }
 
     /// How many font handles were destroyed on this thread.

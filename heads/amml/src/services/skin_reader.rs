@@ -3,8 +3,8 @@
 use heads_core::structs::SkinView;
 
 use super::MemoryReader;
-use crate::layouts::{ImageLayout, SerializedSkinLayout};
-use crate::structs::PacketOffsets;
+use crate::layouts::ImageLayout;
+use crate::structs::{AnimatedImageOffsets, PacketOffsets};
 
 pub struct SkinReader;
 
@@ -28,7 +28,7 @@ impl SkinReader {
             return None;
         }
         // SAFETY: the element is a live SerializedSkinImpl and `skin_image` is inside it.
-        let image: ImageLayout = unsafe { MemoryReader::read(element.checked_add(offsets.skin_image)?)? };
+        let image: ImageLayout = unsafe { MemoryReader::read(element.checked_add(offsets.skin.image)?)? };
         Self::image_view(&image)
     }
 
@@ -37,44 +37,47 @@ impl SkinReader {
     ///
     /// # Safety
     /// As for `view`.
-    pub unsafe fn animated_face(skin_ref: usize) -> Option<SkinView<'static>> {
+    pub unsafe fn animated_face(skin_ref: usize, offsets: &PacketOffsets) -> Option<SkinView<'static>> {
         // SAFETY: the caller guarantees `skin_ref` is null or a live shared_ptr, whose first word is the element.
         let element: usize = unsafe { MemoryReader::read(skin_ref)? };
         if element == 0 {
             return None;
         }
+        let animated = offsets.skin.animated.as_ref()?;
         // SAFETY: the vector is a member of the live SerializedSkinImpl.
-        let [first, last] =
-            unsafe { MemoryReader::read::<[usize; 2]>(element + SerializedSkinLayout::ANIMATED_IMAGES)? };
-        if first == 0 || last < first {
+        let [first, last] = unsafe { MemoryReader::read::<[usize; 2]>(element.checked_add(animated.list)?)? };
+        if first == 0 || last < first || animated.stride == 0 {
             return None;
         }
-        let count = ((last - first) / SerializedSkinLayout::ANIMATED_IMAGE_SIZE).min(Self::MAX_ANIMATED);
+        let count = ((last - first) / animated.stride).min(Self::MAX_ANIMATED);
         (0..count).find_map(|index| {
-            let base = first + index * SerializedSkinLayout::ANIMATED_IMAGE_SIZE;
+            let base = first + index * animated.stride;
             // SAFETY: the element lies inside the live vector, and its members are inside the element.
-            let kind = unsafe { MemoryReader::read::<u32>(base + SerializedSkinLayout::ANIMATED_IMAGE_TYPE)? };
-            if kind != SerializedSkinLayout::ANIMATED_TYPE_FACE {
+            let kind = unsafe { MemoryReader::read::<u32>(base + animated.kind)? };
+            if kind != AnimatedImageOffsets::TYPE_FACE {
                 return None;
             }
             // SAFETY: as above.
-            let image =
-                unsafe { MemoryReader::read::<ImageLayout>(base + SerializedSkinLayout::ANIMATED_IMAGE_IMAGE)? };
+            let image = unsafe { MemoryReader::read::<ImageLayout>(base + animated.image)? };
             Self::image_view(&image)
         })
     }
 
-    /// Whether the skin behind a `SerializedSkinRef` is a persona skin. False when a link is null.
+    /// Whether the skin behind a `SerializedSkinRef` is a persona skin. False when a link is null or the persona
+    /// offsets are off.
     ///
     /// # Safety
     /// As for `view`.
-    pub unsafe fn is_persona(skin_ref: usize) -> bool {
+    pub unsafe fn is_persona(skin_ref: usize, offsets: &PacketOffsets) -> bool {
         // SAFETY: the caller guarantees `skin_ref` is null or a live shared_ptr, whose first word is the element.
+        let Some(is_persona) = offsets.skin.is_persona else {
+            return false;
+        };
         let Some(element) = (unsafe { MemoryReader::read::<usize>(skin_ref) }).filter(|element| *element != 0) else {
             return false;
         };
         // SAFETY: the flag is inside the live SerializedSkinImpl.
-        unsafe { MemoryReader::read::<u8>(element + SerializedSkinLayout::IS_PERSONA) }.is_some_and(|flag| flag != 0)
+        unsafe { MemoryReader::read::<u8>(element + is_persona) }.is_some_and(|flag| flag != 0)
     }
 
     // the pixels of an image that the game owns; the caller keeps the view only while the skin is live

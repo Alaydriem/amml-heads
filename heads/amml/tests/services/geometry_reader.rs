@@ -3,7 +3,7 @@ use alaydriem_heads::structs::PacketOffsets;
 use crossbeam_channel::bounded;
 use heads_core::structs::{FaceUpdate, HeadUv, UvRect};
 
-use crate::support::{FakeEntry, FakeGeometry, FakePacket, FakeSkin};
+use crate::support::{FakeEntry, FakeGeometry, FakeLayout, FakePacket, FakeSkin};
 
 const PERSONA: &str = r#"{
   "minecraft:geometry": [{
@@ -14,7 +14,7 @@ const PERSONA: &str = r#"{
 const RED: [u8; 4] = [200, 0, 0, 255];
 
 fn offsets() -> PacketOffsets {
-    PacketOffsets::new(0xD8, 0xD0, 0xA8, 0x80, 0xF8)
+    FakeLayout::packet_offsets()
 }
 
 fn reader() -> GeometryReader {
@@ -221,4 +221,54 @@ fn a_classic_skin_with_an_animated_face_and_no_mesh_keeps_the_classic_head() {
     let face = sent_face(&observer, &receiver, &skin);
 
     assert_eq!(face.pixel(20, 20), [10, 20, 30, 255]);
+}
+
+fn observer_with_skin_offsets(
+    skin: alaydriem_heads::structs::SkinOffsets,
+    diagnostics: SkinDiagnostics,
+) -> (PacketObserver, crossbeam_channel::Receiver<FaceUpdate>) {
+    let (sender, receiver) = bounded(8);
+    let offsets = PacketOffsets { skin, ..offsets() };
+    (PacketObserver::new_with_geometry(sender, offsets, diagnostics, reader()), receiver)
+}
+
+#[test]
+fn without_the_geometry_name_the_head_is_not_located_and_the_classic_head_is_used() {
+    FakeGeometry::set_json(PERSONA);
+    let skin = persona_skin();
+    let off = alaydriem_heads::structs::SkinOffsets { default_geometry_name: None, ..offsets().skin };
+    let (observer, receiver) = observer_with_skin_offsets(off, SkinDiagnostics::new());
+
+    let packet = one_player(&skin);
+    // SAFETY: the fake packet and skin live for the call and match the 26.60 layout.
+    unsafe { observer.on_player_list(packet.addr()) };
+
+    // the atlas has nothing at the classic head, so no face is sent
+    assert!(receiver.try_recv().is_err());
+    assert_eq!(FakeGeometry::live_allocations(), 0);
+}
+
+#[test]
+fn without_the_persona_offsets_the_animated_face_is_ignored_and_the_geometry_head_is_used() {
+    FakeGeometry::set_json(PERSONA);
+    let skin = persona_with_animated_face();
+    let off = alaydriem_heads::structs::SkinOffsets { is_persona: None, animated: None, ..offsets().skin };
+    let (observer, receiver) = observer_with_skin_offsets(off, SkinDiagnostics::new());
+
+    let face = sent_face(&observer, &receiver, &skin);
+
+    assert_eq!(face.pixel(20, 20), RED);
+}
+
+#[test]
+fn without_the_diagnostics_offsets_the_faces_are_sent_and_nothing_is_logged() {
+    FakeGeometry::set_json(PERSONA);
+    let skin = persona_skin();
+    let off = alaydriem_heads::structs::SkinOffsets { resource_patch: None, is_premium: None, ..offsets().skin };
+    let (observer, receiver) = observer_with_skin_offsets(off, SkinDiagnostics::new());
+
+    let face = sent_face(&observer, &receiver, &skin);
+
+    assert_eq!(face.pixel(0, 0), RED);
+    assert_eq!(observer.diagnostics().logged(), 0);
 }

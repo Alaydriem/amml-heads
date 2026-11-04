@@ -20,7 +20,10 @@ use crate::services::{
     AmmlHost, BuildGate, ChatFontCheck, ChatRuntime, ChatState, GeometryReader, HeadsRuntime, HookInstaller,
     PacketObserver, RenderRuntime, RenderState, SkinDiagnostics, TextureBridge,
 };
-use crate::structs::{ClientAccess, PacketOffsets, ResolvedTextureFns};
+use crate::structs::{
+    AnimatedImageOffsets, ClientAccess, PacketOffsets, PlayerListOffsets, ResolvedTextureFns, SkinOffsets,
+    SkinPacketOffsets, TextureLayout, TurnedOff, WaypointOffsets,
+};
 use crate::traits::GameHost;
 use crate::types::HookSpec;
 
@@ -35,6 +38,9 @@ impl HeadsMod {
     const UPLOADS_PER_FRAME: usize = 4;
     // the id as the module string the loader and the hook host take; a test checks it against `AmmlMod::id`
     pub const MODULE: &'static str = "@alaydriem/heads";
+    const DIAGNOSTICS_FEATURE: &'static str = "skin diagnostics";
+    const GEOMETRY_FEATURE: &'static str = "geometry head locator";
+    const PERSONA_FEATURE: &'static str = "persona animated faces";
 
     // every hook, in install order: the icon blit goes in before the render that tags colours for it, and the
     // render goes in last. They come out in the reverse order
@@ -110,6 +116,7 @@ impl HeadsMod {
     // Then every locator bar entry and hook target must resolve before the state is made or any hook goes in. The
     // chat heads entries and hooks are optional: when one fails, chat heads is off and one line says why.
     pub fn enable_with<H: GameHost>(host: &H, runtime: &HeadsRuntime) -> Result<(), SdkError> {
+        runtime.clear_turned_off();
         let mesh_size = host.resolve(HeadsEntries::MESH_SIZE.as_str())?;
         if !BuildGate::accepts(mesh_size) {
             host.warn(&format!(
@@ -120,10 +127,12 @@ impl HeadsMod {
         let base_offsets = Self::packet_offsets(host)?;
         let access = Self::client_access(host)?;
         let textures = Self::texture_fns(host)?;
+        let texture_layout = Self::texture_layout(host)?;
         let heap = Self::heap(host)?;
         let to_styled_string = Self::value(host, HeadsEntries::JSON_VALUE_TO_STYLED_STRING)?;
         let specs = Self::hooks();
         let targets = HookInstaller::resolve(host, &specs)?;
+        let (base_offsets, side_off) = Self::side_features(host, runtime, base_offsets);
         let chat_specs = Self::chat_hooks();
         let chat = Self::chat_parts(host, base_offsets, &chat_specs);
         let offsets = chat.as_ref().map_or(base_offsets, |(offsets, _, _)| *offsets);
@@ -134,7 +143,7 @@ impl HeadsMod {
             store,
             receiver,
             HeadsSettings::default(),
-            TextureBridge::new(textures),
+            TextureBridge::new(textures, texture_layout),
             access,
             Some(heap),
         );
@@ -157,11 +166,16 @@ impl HeadsMod {
                     ChatState::new(GlyphPage::new(ChatState::VANILLA_ROW0), Arc::clone(&flags)),
                     flags,
                 );
-                host.info("features off: none");
+                if side_off.is_empty() {
+                    host.info("features off: none");
+                } else {
+                    host.info(&format!("features off: {}", side_off.join(", ")));
+                }
             }
             Err(error) => {
                 runtime.set_observer(Self::observer(sender, base_offsets, to_styled_string, heap));
-                host.warn(&format!("features off: chat heads ({error})"));
+                host.error(&format!("features off: chat heads ({error})"));
+                runtime.note_turned_off(TurnedOff::new("chat heads", error.to_string()));
             }
         }
         runtime.enable_link();
@@ -208,7 +222,10 @@ impl HeadsMod {
             Self::value(host, HeadsEntries::CLIENT_INSTANCE_GET_FONT_HANDLE)?,
             Self::value(host, HeadsEntries::FONT_HANDLE_DTOR)?,
             Self::value(host, HeadsEntries::BITMAP_FONT_VTABLE)?,
-        );
+            Self::value(host, HeadsEntries::FONT_HANDLE_SIZE)?,
+            Self::value(host, HeadsEntries::FONT_HANDLE_DEFAULT_FONT)?,
+        )
+        .ok_or_else(|| SdkError::Mod("the FontHandle layout does not fit the font check".to_string()))?;
         let targets = HookInstaller::resolve(host, specs)?;
         Ok((offsets, font_check, targets))
     }
@@ -219,22 +236,124 @@ impl HeadsMod {
     }
 
     fn packet_offsets<H: GameHost>(host: &H) -> Result<PacketOffsets, SdkError> {
-        Ok(PacketOffsets::new(
+        let list = PlayerListOffsets::new(
+            Self::value(host, HeadsEntries::PLAYER_LIST_PACKET_ENTRIES)?,
             Self::value(host, HeadsEntries::PLAYER_LIST_ADD_ENTRY_SIZE)?,
             Self::value(host, HeadsEntries::PLAYER_LIST_PACKET_VARIANT_INDEX)?,
+            Self::value(host, HeadsEntries::PLAYER_LIST_ADD_ENTRY_UUID)?,
+            Self::value(host, HeadsEntries::PLAYER_LIST_ADD_ENTRY_ID)?,
             Self::value(host, HeadsEntries::PLAYER_LIST_ADD_ENTRY_SKIN)?,
+        );
+        let skin_packet = SkinPacketOffsets::new(
+            Self::value(host, HeadsEntries::PLAYER_SKIN_PACKET_UUID)?,
+            Self::value(host, HeadsEntries::PLAYER_SKIN_PACKET_SKIN)?,
+        );
+        let skin = SkinOffsets::new_required(
             Self::value(host, HeadsEntries::SERIALIZED_SKIN_IMPL_SKIN_IMAGE)?,
             Self::value(host, HeadsEntries::SERIALIZED_SKIN_IMPL_GEOMETRY_DATA)?,
-        ))
+        );
+        Ok(PacketOffsets::new(list, skin_packet, skin))
+    }
+
+    // Adds the side features to the packet offsets. Each feature has its own entries; when one is missing or
+    // unusable the feature is off, the entry is logged at error level and the faces stay. Returns the names of the
+    // features that are off.
+    fn side_features<H: GameHost>(
+        host: &H,
+        runtime: &HeadsRuntime,
+        offsets: PacketOffsets,
+    ) -> (PacketOffsets, Vec<&'static str>) {
+        let mut off = Vec::new();
+        let mut skin = offsets.skin;
+        match Self::group(host, runtime, Self::DIAGNOSTICS_FEATURE, HeadsEntries::DIAGNOSTICS) {
+            Some([resource_patch, is_premium]) => {
+                skin.resource_patch = Some(resource_patch);
+                skin.is_premium = Some(is_premium);
+            }
+            None => off.push(Self::DIAGNOSTICS_FEATURE),
+        }
+        match Self::group(host, runtime, Self::GEOMETRY_FEATURE, HeadsEntries::GEOMETRY) {
+            Some([default_geometry_name]) => skin.default_geometry_name = Some(default_geometry_name),
+            None => off.push(Self::GEOMETRY_FEATURE),
+        }
+        match Self::group(host, runtime, Self::PERSONA_FEATURE, HeadsEntries::PERSONA) {
+            Some([list, stride, kind, image, is_persona]) => {
+                let animated = AnimatedImageOffsets::new(list, stride, kind, image);
+                if animated.is_usable() {
+                    skin.animated = Some(animated);
+                    skin.is_persona = Some(is_persona);
+                } else {
+                    Self::feature_off(host, runtime, Self::PERSONA_FEATURE, HeadsEntries::ANIMATED_IMAGE_DATA_SIZE);
+                    off.push(Self::PERSONA_FEATURE);
+                }
+            }
+            None => off.push(Self::PERSONA_FEATURE),
+        }
+        (PacketOffsets { skin, ..offsets }, off)
+    }
+
+    // The values of an optional group of entries, or `None` when any of them is missing or unusable. Every entry
+    // that fails is logged.
+    fn group<H: GameHost, const N: usize>(
+        host: &H,
+        runtime: &HeadsRuntime,
+        feature: &'static str,
+        ids: [EntryId; N],
+    ) -> Option<[usize; N]> {
+        let mut values = [0usize; N];
+        let mut usable = true;
+        for (slot, id) in values.iter_mut().zip(ids) {
+            match Self::value(host, id) {
+                Ok(value) => *slot = value,
+                Err(_) => {
+                    usable = false;
+                    Self::feature_off(host, runtime, feature, id);
+                }
+            }
+        }
+        usable.then_some(values)
+    }
+
+    // The loader log shows the line at error level now. The manager sink does not exist yet at enable, so the
+    // runtime holds the feature and writes it to the manager log when the link attaches.
+    fn feature_off<H: GameHost>(host: &H, runtime: &HeadsRuntime, feature: &'static str, id: EntryId) {
+        host.error(&format!("game entry missing or unusable, {feature} turned off ({})", id.as_str()));
+        runtime.note_turned_off(TurnedOff::new(feature, id.as_str()));
     }
 
     fn client_access<H: GameHost>(host: &H) -> Result<ClientAccess, SdkError> {
+        let waypoints = WaypointOffsets::new(
+            Self::value(host, HeadsEntries::CLIENT_LOCATOR_BAR_LIST_HEAD)?,
+            Self::value(host, HeadsEntries::CLIENT_LOCATOR_BAR_NODE_WAYPOINT)?,
+            Self::value(host, HeadsEntries::CLIENT_WAYPOINT_COLOR)?,
+            Self::value(host, HeadsEntries::CLIENT_WAYPOINT_COLOR_ENGAGED)?,
+            Self::value(host, HeadsEntries::CLIENT_WAYPOINT_VISIBLE)?,
+            Self::value(host, HeadsEntries::CLIENT_ENTITY_WAYPOINT_ACTOR_ID)?,
+        )
+        .ok_or_else(|| {
+            SdkError::Mod("the ClientWaypoint colour layout does not fit the waypoint tagger".to_string())
+        })?;
         Ok(ClientAccess::new(
             Self::value(host, EntryId::CLIENT_INSTANCE_GET_LOCAL_PLAYER)?,
             Self::value(host, HeadsEntries::CLIENT_INSTANCE_GET_TEXTURE_GROUP)?,
             Self::value(host, HeadsEntries::LOCAL_PLAYER_CLIENT_LOCATOR_BAR)?,
             Self::value(host, HeadsEntries::CLIENT_ENTITY_WAYPOINT_VTABLE)?,
+            waypoints,
         ))
+    }
+
+    fn texture_layout<H: GameHost>(host: &H) -> Result<TextureLayout, SdkError> {
+        TextureLayout::new(
+            Self::value(host, HeadsEntries::TEXTURE_GROUP_TEXTURE_GROUP_BASE)?,
+            Self::value(host, HeadsEntries::IMAGE_BUFFER_SIZE)?,
+            Self::value(host, HeadsEntries::IMAGE_BUFFER_DELETER)?,
+            Self::value(host, HeadsEntries::IMAGE_BUFFER_DATA)?,
+            Self::value(host, HeadsEntries::IMAGE_BUFFER_BYTE_SIZE)?,
+            Self::value(host, HeadsEntries::RESOURCE_LOCATION_SIZE)?,
+        )
+        .ok_or_else(|| {
+            SdkError::Mod("the ImageBuffer or ResourceLocation layout does not fit the texture bridge".to_string())
+        })
     }
 
     fn texture_fns<H: GameHost>(host: &H) -> Result<ResolvedTextureFns, SdkError> {

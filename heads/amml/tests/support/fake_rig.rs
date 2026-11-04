@@ -4,7 +4,7 @@ use heads_core::config::HeadsSettings;
 use heads_core::services::FaceStore;
 use heads_core::structs::{FaceImage, FaceUpdate};
 
-use super::{FakeClient, FakeGame, FakeWaypoints, WaypointSpec};
+use super::{FakeClient, FakeGame, FakeLayout, FakeWaypoints, WaypointSpec};
 
 /// A render state wired to fake game memory: a client, its locator bar list and fake texture functions.
 pub struct FakeRig {
@@ -23,7 +23,7 @@ impl FakeRig {
             FaceStore::new(128, 128),
             receiver,
             settings,
-            TextureBridge::new(FakeGame::texture_fns()),
+            TextureBridge::new(FakeGame::texture_fns(), FakeLayout::texture_layout()),
             client.access(),
             Some(FakeGame::heap()),
         );

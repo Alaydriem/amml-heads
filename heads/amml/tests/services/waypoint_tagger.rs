@@ -1,16 +1,16 @@
 use alaydriem_heads::services::WaypointTagger;
 use alaydriem_heads::structs::TagFrame;
 
-use crate::support::{ENTITY_VTABLE, FakeWaypoints, WaypointSpec};
+use crate::support::{ENTITY_VTABLE, FakeLayout, FakeWaypoints, WaypointSpec};
 
 fn tag(list: &FakeWaypoints, frame: &mut TagFrame) -> bool {
     // SAFETY: the fake list is a live circular list of fake waypoints.
-    unsafe { WaypointTagger::tag(list.head(), ENTITY_VTABLE, frame) }
+    unsafe { WaypointTagger::tag(list.head(), ENTITY_VTABLE, &FakeLayout::waypoints(), frame) }
 }
 
 fn restore(frame: &mut TagFrame) {
     // SAFETY: the fake waypoints are still alive.
-    unsafe { WaypointTagger::restore(frame) };
+    unsafe { WaypointTagger::restore(frame, &FakeLayout::waypoints()) };
 }
 
 fn all_bytes(list: &FakeWaypoints) -> Vec<Vec<u8>> {
@@ -92,5 +92,5 @@ fn list_longer_than_the_walk_cap_tags_nothing() {
 fn null_list_head_tags_nothing() {
     let mut frame = TagFrame::new();
     // SAFETY: a null head is rejected before any read.
-    assert!(!unsafe { WaypointTagger::tag(0, ENTITY_VTABLE, &mut frame) });
+    assert!(!unsafe { WaypointTagger::tag(0, ENTITY_VTABLE, &FakeLayout::waypoints(), &mut frame) });
 }

@@ -7,7 +7,7 @@ use heads_core::services::FaceExtractor;
 use heads_core::structs::{FaceUpdate, HeadUv};
 
 use super::{ChatRuntime, GeometryReader, MemoryReader, SkinDiagnostics, SkinReader, StdStringReader};
-use crate::structs::{PacketOffsets, SkinEvent};
+use crate::structs::{PacketOffsets, PlayerListOffsets, SkinEvent};
 
 /// Turns player list and player skin packets into face updates on a bounded channel.
 pub struct PacketObserver {
@@ -76,16 +76,17 @@ impl PacketObserver {
             return;
         }
         // SAFETY: the caller guarantees the packet is live, and the entries vector is inside it.
-        let Some([first, last]) = (unsafe { MemoryReader::read::<[usize; 2]>(packet + PacketOffsets::ENTRIES_VECTOR) })
+        let Some([first, last]) = (unsafe { MemoryReader::read::<[usize; 2]>(packet + self.offsets.list.entries) })
         else {
             return;
         };
-        if first == 0 || last < first || self.offsets.entry_size == 0 {
+        let entry_size = self.offsets.list.entry_size;
+        if first == 0 || last < first || entry_size == 0 {
             return;
         }
-        let count = ((last - first) / self.offsets.entry_size).min(Self::MAX_ENTRIES);
+        let count = ((last - first) / entry_size).min(Self::MAX_ENTRIES);
         for index in 0..count {
-            let entry = first + index * self.offsets.entry_size;
+            let entry = first + index * entry_size;
             // SAFETY: `entry` is inside the entries vector of the live packet.
             unsafe { self.on_entry(entry) };
         }
@@ -94,20 +95,21 @@ impl PacketObserver {
     /// Sends a skin update for a `PlayerSkinPacket`.
     ///
     /// # Safety
-    /// `packet` must be null or the address of a live `PlayerSkinPacket`, and must stay alive for the call.
+    /// `packet` must be null or the address of a live `PlayerSkinPacket` with the layout in `offsets`, and must
+    /// stay alive for the call.
     pub unsafe fn on_player_skin(&self, packet: usize) {
         if packet == 0 {
             return;
         }
         // SAFETY: the caller guarantees the packet is live; the uuid is inside it.
-        let Some(uuid) = (unsafe { MemoryReader::read::<[u8; 16]>(packet + PacketOffsets::SKIN_PACKET_UUID) }) else {
+        let Some(uuid) = (unsafe { MemoryReader::read::<[u8; 16]>(packet + self.offsets.skin_packet.uuid) }) else {
             return;
         };
         if self.drop_when_full() {
             return;
         }
         // SAFETY: the skin reference is inside the live packet.
-        let Some(face) = (unsafe { self.face("PlayerSkin", uuid, None, packet + PacketOffsets::SKIN_PACKET_SKIN) })
+        let Some(face) = (unsafe { self.face("PlayerSkin", uuid, None, packet + self.offsets.skin_packet.skin) })
         else {
             return;
         };
@@ -118,15 +120,15 @@ impl PacketObserver {
     // SAFETY contract: `entry` is the address of one live entry of a PlayerListPacket.
     unsafe fn on_entry(&self, entry: usize) {
         // SAFETY: the entry is live per the contract.
-        let Some(variant) = (unsafe { MemoryReader::read::<u8>(entry + self.offsets.variant_index) }) else {
+        let Some(variant) = (unsafe { MemoryReader::read::<u8>(entry + self.offsets.list.variant_index) }) else {
             return;
         };
         // SAFETY: the entry is live per the contract.
-        let Some(uuid) = (unsafe { MemoryReader::read::<[u8; 16]>(entry + PacketOffsets::ENTRY_UUID) }) else {
+        let Some(uuid) = (unsafe { MemoryReader::read::<[u8; 16]>(entry + self.offsets.list.uuid) }) else {
             return;
         };
         match variant {
-            PacketOffsets::VARIANT_ADD => {
+            PlayerListOffsets::VARIANT_ADD => {
                 // SAFETY: the entry is live per the contract.
                 let identity = unsafe { self.identity(entry) };
                 if let Some((name, xuid)) = &identity {
@@ -136,12 +138,12 @@ impl PacketObserver {
                     return;
                 }
                 // SAFETY: the entry is live per the contract.
-                let Some(actor) = (unsafe { MemoryReader::read::<i64>(entry + PacketOffsets::ENTRY_ACTOR) }) else {
+                let Some(actor) = (unsafe { MemoryReader::read::<i64>(entry + self.offsets.list.actor) }) else {
                     return;
                 };
                 // SAFETY: the skin reference is inside the live entry.
                 let Some(face) =
-                    (unsafe { self.face("PlayerList.Add", uuid, Some(actor), entry + self.offsets.add_entry_skin) })
+                    (unsafe { self.face("PlayerList.Add", uuid, Some(actor), entry + self.offsets.list.skin) })
                 else {
                     return;
                 };
@@ -150,7 +152,7 @@ impl PacketObserver {
                 }
                 self.send(FaceUpdate::Add { uuid, actor, face });
             }
-            PacketOffsets::VARIANT_REMOVE => self.send(FaceUpdate::Remove { uuid }),
+            PlayerListOffsets::VARIANT_REMOVE => self.send(FaceUpdate::Remove { uuid }),
             _ => {}
         }
     }
@@ -165,7 +167,7 @@ impl PacketObserver {
     ) -> Option<Box<heads_core::structs::FaceImage>> {
         // SAFETY: the skin reference is live per the contract, and the views are dropped before returning.
         let (view, animated) =
-            unsafe { (SkinReader::view(skin_ref, &self.offsets), SkinReader::animated_face(skin_ref)) };
+            unsafe { (SkinReader::view(skin_ref, &self.offsets), SkinReader::animated_face(skin_ref, &self.offsets)) };
         // SAFETY: the skin reference is live per the contract; the geometry is read and freed inside the call.
         let geometry = match (view.is_some() || animated.is_some(), &self.geometry) {
             (true, Some(reader)) => unsafe { reader.read(skin_ref, &self.offsets, animated.is_some()) },
@@ -175,7 +177,8 @@ impl PacketObserver {
         // whose geometry has no readable animated face mesh
         let animated_head = geometry.as_ref().and_then(|read| read.animated_head).or_else(|| {
             // SAFETY: the skin reference is live per the contract.
-            (animated.is_some() && unsafe { SkinReader::is_persona(skin_ref) }).then(HeadUv::animated_face)
+            (animated.is_some() && unsafe { SkinReader::is_persona(skin_ref, &self.offsets) })
+                .then(HeadUv::animated_face)
         });
         let from_animated = animated
             .as_ref()

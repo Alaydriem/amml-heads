@@ -1,3 +1,5 @@
+use super::WaypointOffsets;
+
 /// What the render side needs from `ClientInstance` and `LocalPlayer`, resolved from the recipe entries at enable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ClientAccess {
@@ -10,6 +12,8 @@ pub struct ClientAccess {
     pub locator_bar_offset: usize,
     /// The `ClientEntityWaypoint` vtable address.
     pub entity_vtable: usize,
+    /// The waypoint list and waypoint layout.
+    pub waypoints: WaypointOffsets,
 }
 
 impl ClientAccess {
@@ -18,7 +22,8 @@ impl ClientAccess {
         get_texture_group_slot: usize,
         locator_bar_offset: usize,
         entity_vtable: usize,
+        waypoints: WaypointOffsets,
     ) -> Self {
-        Self { get_local_player_slot, get_texture_group_slot, locator_bar_offset, entity_vtable }
+        Self { get_local_player_slot, get_texture_group_slot, locator_bar_offset, entity_vtable, waypoints }
     }
 }

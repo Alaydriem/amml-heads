@@ -1,10 +1,10 @@
 use alaydriem_heads::services::SkinReader;
 use alaydriem_heads::structs::PacketOffsets;
 
-use crate::support::{FakeMemory, FakeSkin};
+use crate::support::{FakeLayout, FakeMemory, FakeSkin};
 
 fn offsets() -> PacketOffsets {
-    PacketOffsets::new(0xD8, 0xD0, 0xA8, 0x80, 0xF8)
+    FakeLayout::packet_offsets()
 }
 
 #[test]

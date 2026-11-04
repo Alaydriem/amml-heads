@@ -52,4 +52,8 @@ impl GameHost for AmmlHost<'_> {
     fn info(&self, message: &str) {
         self.api.log(self.module, AmmlLogLevel::INFO, message);
     }
+
+    fn error(&self, message: &str) {
+        self.api.log(self.module, AmmlLogLevel::ERROR, message);
+    }
 }

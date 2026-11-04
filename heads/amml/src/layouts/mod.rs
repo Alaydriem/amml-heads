@@ -5,7 +5,6 @@ pub mod image_layout;
 pub mod list_node_layout;
 pub mod path_view_layout;
 pub mod resource_location_layout;
-pub mod serialized_skin_layout;
 pub mod texture_ptr_layout;
 
 pub use client_waypoint_layout::ClientWaypointLayout;
@@ -15,5 +14,4 @@ pub use image_layout::ImageLayout;
 pub use list_node_layout::ListNodeLayout;
 pub use path_view_layout::PathViewLayout;
 pub use resource_location_layout::ResourceLocationLayout;
-pub use serialized_skin_layout::SerializedSkinLayout;
 pub use texture_ptr_layout::TexturePtrLayout;

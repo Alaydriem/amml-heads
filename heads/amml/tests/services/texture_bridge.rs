@@ -1,12 +1,12 @@
 use alaydriem_heads::services::TextureBridge;
 
-use crate::support::{FakeGame, FakeRig, GameCall};
+use crate::support::{FakeGame, FakeLayout, FakeRig, GameCall};
 
 const FACE_PIXEL: [u8; 4] = [9, 8, 7, 6];
 
 fn bridge() -> TextureBridge {
     FakeGame::take_log();
-    TextureBridge::new(FakeGame::texture_fns())
+    TextureBridge::new(FakeGame::texture_fns(), FakeLayout::texture_layout())
 }
 
 #[test]

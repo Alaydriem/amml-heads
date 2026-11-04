@@ -10,6 +10,7 @@ use amml_sdk::{HookHandle, ModRuntime};
 use heads_core::config::HeadsSettings;
 
 use super::{ChatRuntime, HeadsLink, PacketObserver, RenderRuntime};
+use crate::structs::TurnedOff;
 use crate::types::LinkState;
 
 // What the hooks share: the manager link state, the installed hooks and the packet observer. The mod manager is
@@ -21,12 +22,16 @@ pub struct HeadsRuntime {
     link: Mutex<Option<HeadsLink>>,
     hooks: Mutex<Vec<HookHandle>>,
     observer: RwLock<Option<PacketObserver>>,
+    // the features enable turned off, held until the manager sink exists; holds at most TURNED_OFF_CAPACITY items
+    turned_off: Mutex<Vec<TurnedOff>>,
 }
 
 static RUNTIME: OnceLock<HeadsRuntime> = OnceLock::new();
 
 impl HeadsRuntime {
     pub const HOOK_CAPACITY: usize = 8;
+    // most features enable can turn off: the three side features and chat heads, with room for each entry
+    pub const TURNED_OFF_CAPACITY: usize = 16;
 
     pub fn new(config_dir: &Path) -> Self {
         Self {
@@ -35,6 +40,7 @@ impl HeadsRuntime {
             link: Mutex::new(None),
             hooks: Mutex::new(Vec::with_capacity(Self::HOOK_CAPACITY)),
             observer: RwLock::new(None),
+            turned_off: Mutex::new(Vec::with_capacity(Self::TURNED_OFF_CAPACITY)),
         }
     }
 
@@ -49,6 +55,24 @@ impl HeadsRuntime {
 
     pub fn link_state(&self) -> LinkState {
         LinkState::from_u8(self.link_state.load(Ordering::SeqCst))
+    }
+
+    // enable: forgets the features of an earlier enable
+    pub fn clear_turned_off(&self) {
+        self.turned_off.lock().unwrap_or_else(PoisonError::into_inner).clear();
+    }
+
+    // notes a feature that enable turned off; beyond TURNED_OFF_CAPACITY the note is dropped
+    pub fn note_turned_off(&self, item: TurnedOff) {
+        let mut held = self.turned_off.lock().unwrap_or_else(PoisonError::into_inner);
+        if held.len() < Self::TURNED_OFF_CAPACITY {
+            held.push(item);
+        }
+    }
+
+    // the features held for the manager log, which the next successful attach writes
+    pub fn turned_off(&self) -> Vec<TurnedOff> {
+        self.turned_off.lock().unwrap_or_else(PoisonError::into_inner).clone()
     }
 
     // enable: the next tick reaches the manager again
@@ -86,9 +110,23 @@ impl HeadsRuntime {
                     self.apply_settings(link.settings());
                 }
                 *slot = link;
+                if state == LinkState::Attached {
+                    self.flush_turned_off();
+                }
                 state
             }
             Err(current) => LinkState::from_u8(current),
+        }
+    }
+
+    // writes the held features to the manager log, once per enable: the manager sink exists after an attach
+    fn flush_turned_off(&self) {
+        let held = std::mem::take(&mut *self.turned_off.lock().unwrap_or_else(PoisonError::into_inner));
+        for item in held {
+            curia::error!("game entry missing or unusable, feature turned off", {
+                feature: item.feature,
+                entry: item.entry
+            });
         }
     }
 

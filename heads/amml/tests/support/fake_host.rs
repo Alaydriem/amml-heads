@@ -7,7 +7,7 @@ use alaydriem_heads::types::HookSpec;
 use amml_game::EntryId;
 use amml_sdk::{HookHandle, SdkError};
 
-use super::{ENTITY_VTABLE, FakeGame, FakeGeometry};
+use super::{ENTITY_VTABLE, FakeGame, FakeGeometry, FakeLayout};
 
 const HUD_VTABLE: u64 = 0xF260170;
 const LEGACY_VTABLE: u64 = 0xF2CFE40;
@@ -20,6 +20,7 @@ pub struct FakeHost {
     unhooked: RefCell<Vec<HookHandle>>,
     warnings: RefCell<Vec<String>>,
     infos: RefCell<Vec<String>>,
+    errors: RefCell<Vec<String>>,
     failing: Option<&'static str>,
 }
 
@@ -64,7 +65,7 @@ impl FakeHost {
         let mut entries: BTreeMap<&'static str, u64> =
             entries.iter().map(|(id, value)| (id.as_str(), *value)).collect();
         entries.insert(EntryId::CORE_OPERATOR_DELETE.as_str(), heap_delete as u64);
-        let chat: [(EntryId, u64); 7] = [
+        let chat: [(EntryId, u64); 9] = [
             (HeadsEntries::GUI_MESSAGE_CTOR, Self::GUI_MESSAGE),
             (HeadsEntries::BITMAP_FONT_VTABLE, 0xF0EA8A0),
             (HeadsEntries::BITMAP_FONT_GET_CHAR_WIDTH, Self::CHAR_WIDTH),
@@ -72,8 +73,38 @@ impl FakeHost {
             (HeadsEntries::PLAYER_LIST_ADD_ENTRY_XUID, 0x40),
             (HeadsEntries::CLIENT_INSTANCE_GET_FONT_HANDLE, 87),
             (HeadsEntries::FONT_HANDLE_DTOR, 0xE7F9E0),
+            (HeadsEntries::FONT_HANDLE_SIZE, FakeLayout::FONT_HANDLE_SIZE as u64),
+            (HeadsEntries::FONT_HANDLE_DEFAULT_FONT, FakeLayout::FONT_HANDLE_DEFAULT_FONT as u64),
         ];
         entries.extend(chat.iter().map(|(id, value)| (id.as_str(), *value)));
+        let layout: [(EntryId, usize); 25] = [
+            (HeadsEntries::PLAYER_LIST_PACKET_ENTRIES, FakeLayout::ENTRIES),
+            (HeadsEntries::PLAYER_LIST_ADD_ENTRY_UUID, FakeLayout::ENTRY_UUID),
+            (HeadsEntries::PLAYER_LIST_ADD_ENTRY_ID, FakeLayout::ENTRY_ACTOR),
+            (HeadsEntries::PLAYER_SKIN_PACKET_UUID, FakeLayout::SKIN_PACKET_UUID),
+            (HeadsEntries::PLAYER_SKIN_PACKET_SKIN, FakeLayout::SKIN_PACKET_SKIN),
+            (HeadsEntries::SERIALIZED_SKIN_IMPL_RESOURCE_PATCH, FakeLayout::RESOURCE_PATCH),
+            (HeadsEntries::SERIALIZED_SKIN_IMPL_DEFAULT_GEOMETRY_NAME, FakeLayout::DEFAULT_GEOMETRY_NAME),
+            (HeadsEntries::SERIALIZED_SKIN_IMPL_SKIN_ANIMATED_IMAGES, FakeLayout::ANIMATED_IMAGES),
+            (HeadsEntries::SERIALIZED_SKIN_IMPL_IS_PREMIUM, FakeLayout::IS_PREMIUM),
+            (HeadsEntries::SERIALIZED_SKIN_IMPL_IS_PERSONA, FakeLayout::IS_PERSONA),
+            (HeadsEntries::ANIMATED_IMAGE_DATA_SIZE, FakeLayout::ANIMATED_IMAGE_SIZE),
+            (HeadsEntries::ANIMATED_IMAGE_DATA_TYPE, FakeLayout::ANIMATED_IMAGE_TYPE),
+            (HeadsEntries::ANIMATED_IMAGE_DATA_IMAGE, FakeLayout::ANIMATED_IMAGE_IMAGE),
+            (HeadsEntries::CLIENT_LOCATOR_BAR_LIST_HEAD, FakeLayout::LIST_HEAD),
+            (HeadsEntries::CLIENT_LOCATOR_BAR_NODE_WAYPOINT, FakeLayout::NODE_WAYPOINT),
+            (HeadsEntries::CLIENT_WAYPOINT_COLOR, FakeLayout::COLOR),
+            (HeadsEntries::CLIENT_WAYPOINT_COLOR_ENGAGED, FakeLayout::COLOR_ENGAGED),
+            (HeadsEntries::CLIENT_WAYPOINT_VISIBLE, FakeLayout::VISIBLE),
+            (HeadsEntries::CLIENT_ENTITY_WAYPOINT_ACTOR_ID, FakeLayout::ACTOR_ID),
+            (HeadsEntries::TEXTURE_GROUP_TEXTURE_GROUP_BASE, FakeLayout::TEXTURE_GROUP_BASE),
+            (HeadsEntries::IMAGE_BUFFER_SIZE, FakeLayout::IMAGE_BUFFER_SIZE),
+            (HeadsEntries::IMAGE_BUFFER_DELETER, FakeLayout::IMAGE_BUFFER_DELETER),
+            (HeadsEntries::IMAGE_BUFFER_DATA, FakeLayout::IMAGE_BUFFER_DATA),
+            (HeadsEntries::IMAGE_BUFFER_BYTE_SIZE, FakeLayout::IMAGE_BUFFER_BYTE_SIZE),
+            (HeadsEntries::RESOURCE_LOCATION_SIZE, FakeLayout::RESOURCE_LOCATION_SIZE),
+        ];
+        entries.extend(layout.iter().map(|(id, value)| (id.as_str(), *value as u64)));
         let pointers = BTreeMap::from([
             (HUD_VTABLE + 16 * 8, Self::RENDER),
             (LEGACY_VTABLE + 179 * 8, Self::PLAYER_LIST),
@@ -86,6 +117,7 @@ impl FakeHost {
             unhooked: RefCell::new(Vec::new()),
             warnings: RefCell::new(Vec::new()),
             infos: RefCell::new(Vec::new()),
+            errors: RefCell::new(Vec::new()),
             failing: None,
         }
     }
@@ -116,6 +148,10 @@ impl FakeHost {
 
     pub fn infos(&self) -> Vec<String> {
         self.infos.borrow().clone()
+    }
+
+    pub fn errors(&self) -> Vec<String> {
+        self.errors.borrow().clone()
     }
 
     pub fn warnings(&self) -> Vec<String> {
@@ -152,5 +188,9 @@ impl GameHost for FakeHost {
 
     fn info(&self, message: &str) {
         self.infos.borrow_mut().push(message.to_string());
+    }
+
+    fn error(&self, message: &str) {
+        self.errors.borrow_mut().push(message.to_string());
     }
 }
