@@ -2,6 +2,7 @@ namespace   = "alaydriem"
 name        = "heads"
 entry       = "alaydriem_heads.dll"
 api_version = 2
+amml_version = "26.60.6"
 entries = [
   "ClientInstance.update",
   "ClientInstance.getLocalPlayer",
