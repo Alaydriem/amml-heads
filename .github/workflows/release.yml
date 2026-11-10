@@ -35,4 +35,4 @@ jobs:
       namespace: alaydriem
       name: heads
       package_task: package
-      descriptor: heads/amml/descriptor.hcl
+      descriptor: src/amml/descriptor.hcl

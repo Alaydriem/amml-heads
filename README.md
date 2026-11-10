@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./assets/icon.png" alt="Heads" width="256">
+<img src="./assets/readme.png" alt="Heads" width="256">
 
 # Alaydriem's Heads
 
@@ -57,7 +57,7 @@ mise run package
 mise run test
 ```
 
-`mise run package` writes `dist/@alaydriem/heads` and checks that it holds exactly the dll, the pdb and `amml.hcl`.
+`mise run package` writes `dist/@alaydriem/heads` and checks that it holds exactly the dll, `amml.hcl` and the icon. `mise run install --instance <name>` runs `package`, then copies it into `%LOCALAPPDATA%\amml\instances\<name>\mods\amml\@alaydriem\heads\`. Close the game first.
 
 ## License
 
