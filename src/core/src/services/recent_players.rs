@@ -30,6 +30,10 @@ impl RecentPlayers {
         self.entries.push_back((uuid, kept_xuid, kept_name));
     }
 
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
+
     pub fn remove(&mut self, uuid: [u8; 16]) {
         self.entries.retain(|entry| entry.0 != uuid);
     }

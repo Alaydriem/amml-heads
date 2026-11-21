@@ -101,6 +101,23 @@ impl<T> FaceStore<T> {
         }
     }
 
+    /// Forgets every texture and marks every face as waiting, after the textures were freed outside the store. The
+    /// textures are not handed back: the caller no longer owns them. Gives the number of faces that held a texture.
+    pub fn invalidate_textures(&mut self) -> usize {
+        let mut held = 0;
+        for slot in 0..self.slots.len() {
+            let generation = self.take_generation();
+            let Some(entry) = self.slots[slot].as_mut() else { continue };
+            if entry.texture.take().is_some() {
+                held += 1;
+            }
+            // a key made before the reset no longer attaches
+            entry.generation = generation;
+            entry.pending = true;
+        }
+        held
+    }
+
     /// The next face that needs a texture, until the upload budget of the frame is spent.
     pub fn next_upload(&mut self) -> Option<(FaceKey, &FaceImage)> {
         if self.uploaded_this_frame >= self.uploads_per_frame {

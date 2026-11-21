@@ -1,12 +1,12 @@
 use crate::services::RecentPlayers;
 
-/// Maps XUIDs and names to player UUIDs. A player that holds a glyph cell is recorded; a player seen without one is
+/// Maps XUIDs and names to player UUIDs. A player that holds an icon is recorded; a player seen without one is
 /// noted in a `RecentPlayers`. A UUID is in one of the two, never both. A lookup counts both, and finds a player
 /// only when exactly one UUID matches.
 ///
-/// Bound: at most `CAPACITY` (240) recorded players for the life of the process, the same as the glyph cells.
-/// There is no eviction and a Remove never deletes an entry, so a chat line that names a departed player still
-/// finds the face. When full, `record` refuses a new UUID. The noted players have the bound of `RecentPlayers`.
+/// Bound: at most `CAPACITY` (240) recorded players until `clear`, the same as the icons. There is no eviction and a
+/// player that leaves the list is kept until `clear`, so a chat line that names a departed player still finds the
+/// face. When full, `record` refuses a new UUID. The noted players have the bound of `RecentPlayers`.
 pub struct PlayerDirectory {
     entries: Vec<([u8; 16], String, String)>,
     recent: RecentPlayers,
@@ -38,6 +38,11 @@ impl PlayerDirectory {
         }
     }
 
+    /// Whether `uuid` is a recorded player, one that holds an icon.
+    pub fn knows(&self, uuid: [u8; 16]) -> bool {
+        self.entries.iter().any(|entry| entry.0 == uuid)
+    }
+
     pub fn by_xuid(&self, xuid: &str) -> Option<[u8; 16]> {
         if xuid.is_empty() {
             return None;
@@ -47,6 +52,12 @@ impl PlayerDirectory {
 
     pub fn by_name(&self, name: &str) -> Option<[u8; 16]> {
         self.sole(|_, entry_name| entry_name == name)
+    }
+
+    /// Forgets every player, as the world was left.
+    pub fn clear(&mut self) {
+        self.entries.clear();
+        self.recent.clear();
     }
 
     pub fn names(&self) -> impl Iterator<Item = (&str, [u8; 16])> {

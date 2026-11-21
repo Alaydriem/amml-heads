@@ -7,7 +7,7 @@
 [![Release](https://img.shields.io/github/v/release/alaydriem/amml-heads?include_prereleases)](https://github.com/alaydriem/amml-heads/releases)
 [![Build](https://img.shields.io/github/actions/workflow/status/alaydriem/amml-heads/build.yml?branch=master&label=build)](https://github.com/alaydriem/amml-heads/actions/workflows/build.yml)
 [![License](https://img.shields.io/github/license/alaydriem/amml-heads)](./LICENSE)
-![Minecraft Bedrock](https://img.shields.io/badge/Minecraft_Bedrock-1.26.60-62B47A)
+![Minecraft Bedrock](https://img.shields.io/badge/Minecraft_Bedrock-1.26.63_and_1.26.70-62B47A)
 [![AMML](https://img.shields.io/badge/AMML-mod-4A90D9)](https://github.com/alaydriem/amml)
 
 </div>
@@ -48,7 +48,7 @@ whatever is at that place.
 
 ## Building
 
-Requires Windows x64, [mise](https://mise.jdx.dev), rustup and [cargo-nextest](https://nexte.st). No sibling checkout is needed: cargo fetches `amml` and `amml-modmanager` at the release tag named in `Cargo.toml`.
+Requires Windows x64, [mise](https://mise.jdx.dev), rustup and [cargo-nextest](https://nexte.st). The `amml` and `modmanager` checkouts must sit next to this repo: `Cargo.toml` uses path dependencies until the release tag.
 
 ```powershell
 mise trust

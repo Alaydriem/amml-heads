@@ -103,3 +103,31 @@ fn recording_a_noted_player_keeps_one_entry() {
     assert_eq!(directory.by_name("Alex"), Some(uuid(1)));
     assert_eq!(directory.names().count(), 1);
 }
+
+#[test]
+fn clear_forgets_recorded_and_noted_players_and_opens_the_directory_again() {
+    let mut directory = PlayerDirectory::new();
+    for n in 0..PlayerDirectory::CAPACITY {
+        assert!(directory.record(uuid(n), &format!("x{n}"), &format!("Player{n}")));
+    }
+    directory.note(uuid(999), "xn", "Noted");
+    assert!(!directory.record(uuid(240), "x240", "Late"));
+
+    directory.clear();
+
+    assert_eq!(directory.by_name("Player0"), None);
+    assert_eq!(directory.by_name("Noted"), None);
+    assert_eq!(directory.names().count(), 0);
+    assert!(directory.record(uuid(240), "x240", "Late"));
+}
+
+#[test]
+fn only_a_recorded_player_is_known() {
+    let mut directory = PlayerDirectory::new();
+    directory.record(uuid(1), "x1", "Steve");
+    directory.note(uuid(2), "x2", "Alex");
+
+    assert!(directory.knows(uuid(1)));
+    assert!(!directory.knows(uuid(2)));
+    assert!(!directory.knows(uuid(3)));
+}

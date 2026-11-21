@@ -1,70 +1,114 @@
-namespace   = "alaydriem"
-name        = "heads"
-entry       = "alaydriem_heads.dll"
-api_version = 2
-amml_version = "26.60.6"
-entries = [
-  "ClientInstance.update",
-  "ClientInstance.getLocalPlayer",
-  "ClientInstance.getTextureGroup",
-  "ClientExitLevel.hook",
-  "LegacyClientNetworkHandler.vtable",
-  "Mesh.size",
-  "core.operator_new",
-  "core.operator_delete",
-  "HudLocatorBarRenderer.vtable",
-  "HudLocatorBarRenderer.render",
-  "HudLocatorBarRenderer.drawIcon",
-  "LocalPlayer.mClientLocatorBar",
-  "ClientEntityWaypoint.vtable",
-  "ClientNetworkHandler.handle.PlayerListPacket",
-  "ClientNetworkHandler.handle.PlayerSkinPacket",
-  "TextureGroup.getTexture",
-  "TextureGroup.uploadTexture",
-  "TextureGroup.unloadTexture",
-  "ResourceLocation.ctor",
-  "ImageBuffer.ctorFromDescription",
-  "PlayerListAddEntry.size",
-  "PlayerListPacket.variantIndex",
-  "PlayerListAddEntry.mSkin",
-  "SerializedSkinImpl.mSkinImage",
-  "JsonValue.toStyledString",
-  "SerializedSkinImpl.mGeometryData",
-  "GuiMessage.ctor",
-  "BitmapFont.vtable",
-  "BitmapFont._getCharWidth",
-  "PlayerListAddEntry.mName",
-  "PlayerListAddEntry.mXUID",
-  "ClientInstance.getFontHandle",
-  "FontHandle.dtor",
-  "FontHandle.size",
-  "FontHandle.mDefaultFont",
-  "PlayerListPacket.mEntries",
-  "PlayerListAddEntry.mUUID",
-  "PlayerListAddEntry.mId",
-  "PlayerSkinPacket.mUUID",
-  "PlayerSkinPacket.mSkin",
-  "SerializedSkinImpl.mResourcePatch",
-  "SerializedSkinImpl.mDefaultGeometryName",
-  "SerializedSkinImpl.mSkinAnimatedImages",
-  "SerializedSkinImpl.mIsPremium",
-  "SerializedSkinImpl.mIsPersona",
-  "AnimatedImageData.size",
-  "AnimatedImageData.mType",
-  "AnimatedImageData.mImage",
-  "ClientLocatorBar.listHead",
-  "ClientLocatorBar.nodeWaypoint",
-  "ClientWaypoint.mColor",
-  "ClientWaypoint.mColorEngaged",
-  "ClientWaypoint.mVisible",
-  "ClientEntityWaypoint.mActorId",
-  "TextureGroup.textureGroupBase",
-  "ImageBuffer.size",
-  "ImageBuffer.mDeleter",
-  "ImageBuffer.mData",
-  "ImageBuffer.mSize",
-  "ResourceLocation.size",
-]
+namespace    = "alaydriem"
+name         = "heads"
+entry        = "alaydriem_heads.dll"
+api_version  = 3
+
+uses {
+  feature "faces" {
+    event "network.player_list" {
+      version  = 1
+      required = true
+    }
+    event "network.player_skin" {
+      version  = 1
+      required = true
+    }
+    event "ui.locator_bar_icon" {
+      version  = 1
+      required = true
+    }
+    event "world.left" {
+      version  = 1
+      required = true
+    }
+    event "ui.textures_reloaded" {
+      version  = 1
+      required = true
+    }
+    area "ui.textures" {
+      version  = 1
+      required = true
+    }
+    area "network.skin" {
+      version  = 1
+      required = true
+    }
+  }
+  feature "settings" {
+    event "client.tick" {
+      version  = 1
+      required = true
+    }
+    event "registry.provider_ready" {
+      version  = 1
+      required = true
+    }
+    event "registry.provider_gone" {
+      version  = 1
+      required = true
+    }
+    event "mods.loaded" {
+      version  = 1
+      required = true
+    }
+    event "input.lease_suspended" {
+      version  = 1
+      required = false
+    }
+    event "input.lease_resumed" {
+      version  = 1
+      required = false
+    }
+    event "input.lease_lost" {
+      version  = 1
+      required = false
+    }
+    event "input.injected_released" {
+      version  = 2
+      required = false
+    }
+    event "overlay.screenshot_taken" {
+      version  = 1
+      required = false
+    }
+    event "overlay.screenshot_written" {
+      version  = 1
+      required = false
+    }
+    area "input.lease" {
+      version  = 1
+      required = false
+    }
+  }
+  feature "chat" {
+    event "ui.chat_message" {
+      version  = 1
+      required = true
+    }
+    area "ui.inline_icons" {
+      version  = 1
+      required = true
+    }
+  }
+  feature "persona" {
+    area "network.skin_animated" {
+      version  = 1
+      required = true
+    }
+  }
+  feature "geometry" {
+    area "network.skin_geometry" {
+      version  = 1
+      required = true
+    }
+  }
+  feature "diagnostics" {
+    area "network.skin_details" {
+      version  = 1
+      required = true
+    }
+  }
+}
 
 listing {
   title       = "Heads"

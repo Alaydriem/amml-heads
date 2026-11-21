@@ -1,11 +1,12 @@
-/// One face cell on the chat glyph page. Cell `i` is the private-use code point U+E110 + `i`.
+/// One inline icon character. Cell `i` is the private-use code point U+E110 + `i`; the loader gives the characters
+/// of the icons in this range.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GlyphCell(pub u8);
 
 impl GlyphCell {
     pub const FIRST_CODEPOINT: u32 = 0xE110;
     pub const LAST_CODEPOINT: u32 = 0xE1FF;
-    /// The width the font gives a cell that holds a face: the 10 pixel face plus one pixel of space, as the font
+    /// The advance the font gives an icon that holds a face: the 10 pixel face plus one pixel of space, as the font
     /// measures the vanilla text-sized glyphs (9 pixels wide, width 10).
     pub const WIDTH: f32 = 11.0;
 

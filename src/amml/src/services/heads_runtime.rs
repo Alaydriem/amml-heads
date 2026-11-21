@@ -1,242 +1,379 @@
-#![allow(unsafe_code)]
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Mutex, MutexGuard, PoisonError, TryLockError};
 
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::{Mutex, OnceLock, PoisonError, RwLock};
-
-use amm_client::link::ApiTable;
-use amm_core::errors::LinkError;
-use amml_sdk::{HookHandle, ModRuntime};
+use amm_client::link::LinkState;
+use amml_api::amml_abi::{ChatMessageAdded, LocatorBarIconDraw, PlayerListUpdate, PlayerSkinChanged, TexturesReloaded};
+use amml_api::{
+    Chat, ChatMessageAddedExt, LocatorBarIconDrawExt, Logger, PlayerListAction, PlayerListEntry, PlayerListUpdateExt,
+    PlayerSkinChangedExt, Rect, Rgba, TextureId, TextureReload, Textures, TexturesReloadedExt,
+};
 use heads_core::config::HeadsSettings;
+use heads_core::services::{IconSampler, QuadScaler};
+use heads_core::structs::{ChatLine, FaceImage, FaceKey, FaceUpdate, IconRect, MessageKind};
 
-use super::{ChatRuntime, HeadsLink, PacketObserver, RenderRuntime};
-use crate::structs::TurnedOff;
-use crate::types::LinkState;
+use crate::services::{ChatBoard, FaceBoard, FaceReader, HeadsLink, SkinDiagnostics};
+use crate::structs::{LineBudget, SettingsCell};
 
-// What the hooks share: the manager link state, the installed hooks and the packet observer. The mod manager is
-// reached on the first ClientInstance::update after enable, when every mod of the host has loaded; `hooks` holds
-// at most HOOK_CAPACITY handles. Without the manager the mod runs with its default settings.
+// what the listeners share: the faces and their textures, the chat icons, the settings and the manager link.
+//
+// Network events (`on_player_list`, `on_player_skin`) can run on the packet handler thread: they copy what they need
+// out of the lent views before they return, and call only the loader calls that are allowed on any thread. The
+// icon draw and chat line listeners never wait for a lock a network event holds. The tick and the icon calls run on
+// the game thread. No two locks are held at once.
 pub struct HeadsRuntime {
-    config_dir: PathBuf,
-    link_state: AtomicU8,
+    log: Logger,
+    textures: Textures,
+    chat: Chat,
+    settings: SettingsCell,
+    faces: Mutex<FaceBoard>,
+    chat_board: Mutex<ChatBoard>,
     link: Mutex<Option<HeadsLink>>,
-    hooks: Mutex<Vec<HookHandle>>,
-    observer: RwLock<Option<PacketObserver>>,
-    // the features enable turned off, held until the manager sink exists; holds at most TURNED_OFF_CAPACITY items
-    turned_off: Mutex<Vec<TurnedOff>>,
+    configured: AtomicBool,
+    diagnostics: SkinDiagnostics,
+    // ticks to wait before the next upload retry on the tick, after an upload the loader refused
+    upload_wait: AtomicU32,
+    // ticks to wait before the next icon retry, while the loader cannot take icons
+    icon_wait: AtomicU32,
+    upload_failed: AtomicBool,
+    drawn: AtomicBool,
+    ready_lines: LineBudget,
+    uploaded_lines: LineBudget,
+    icon_lines: LineBudget,
+    edit_lines: LineBudget,
 }
 
-static RUNTIME: OnceLock<HeadsRuntime> = OnceLock::new();
-
 impl HeadsRuntime {
-    pub const HOOK_CAPACITY: usize = 8;
-    // most features enable can turn off: the three side features and chat heads, with room for each entry
-    pub const TURNED_OFF_CAPACITY: usize = 16;
+    // longest name or XUID the chat feed reads; a longer one gives no chat head
+    const MAX_IDENTITY: usize = 64;
+    // most icons registered in one tick
+    const ICONS_PER_TICK: usize = 16;
+    // ticks between two tries while a loader call is refused
+    const RETRY_TICKS: u32 = 60;
 
-    pub fn new(config_dir: &Path) -> Self {
+    pub fn new(log: Logger, textures: Textures, chat: Chat) -> Self {
         Self {
-            config_dir: config_dir.to_path_buf(),
-            link_state: AtomicU8::new(LinkState::Waiting.to_u8()),
+            log,
+            textures,
+            chat,
+            settings: SettingsCell::new(HeadsSettings::default()),
+            faces: Mutex::new(FaceBoard::new()),
+            chat_board: Mutex::new(ChatBoard::new()),
             link: Mutex::new(None),
-            hooks: Mutex::new(Vec::with_capacity(Self::HOOK_CAPACITY)),
-            observer: RwLock::new(None),
-            turned_off: Mutex::new(Vec::with_capacity(Self::TURNED_OFF_CAPACITY)),
+            configured: AtomicBool::new(false),
+            diagnostics: SkinDiagnostics::new(log),
+            upload_wait: AtomicU32::new(0),
+            icon_wait: AtomicU32::new(0),
+            upload_failed: AtomicBool::new(false),
+            drawn: AtomicBool::new(false),
+            ready_lines: LineBudget::new(16),
+            uploaded_lines: LineBudget::new(8),
+            icon_lines: LineBudget::new(16),
+            edit_lines: LineBudget::new(16),
         }
     }
 
-    // the runtime of this DLL; the first call wins
-    pub fn install(config_dir: &Path) -> &'static HeadsRuntime {
-        RUNTIME.get_or_init(|| Self::new(config_dir))
+    pub fn settings(&self) -> &SettingsCell {
+        &self.settings
     }
 
-    pub fn get() -> Option<&'static HeadsRuntime> {
-        RUNTIME.get()
+    pub fn face_count(&self) -> usize {
+        self.lock_faces().len()
     }
 
-    pub fn link_state(&self) -> LinkState {
-        LinkState::from_u8(self.link_state.load(Ordering::SeqCst))
+    pub fn icon_count(&self) -> usize {
+        self.lock_chat().icons()
     }
 
-    // enable: forgets the features of an earlier enable
-    pub fn clear_turned_off(&self) {
-        self.turned_off.lock().unwrap_or_else(PoisonError::into_inner).clear();
-    }
-
-    // notes a feature that enable turned off; beyond TURNED_OFF_CAPACITY the note is dropped
-    pub fn note_turned_off(&self, item: TurnedOff) {
-        let mut held = self.turned_off.lock().unwrap_or_else(PoisonError::into_inner);
-        if held.len() < Self::TURNED_OFF_CAPACITY {
-            held.push(item);
-        }
-    }
-
-    // the features held for the manager log, which the next successful attach writes
-    pub fn turned_off(&self) -> Vec<TurnedOff> {
-        self.turned_off.lock().unwrap_or_else(PoisonError::into_inner).clone()
-    }
-
-    // enable: the next tick reaches the manager again
-    pub fn enable_link(&self) {
-        self.link_state.store(LinkState::Waiting.to_u8(), Ordering::SeqCst);
-    }
-
-    // once per ClientInstance::update on the game thread, after the original: reaches the manager on the first
-    // call after enable, then applies settings changes
-    pub fn tick(&self) {
-        if self.link_state() == LinkState::Waiting {
-            self.attach_with(ApiTable::resolve());
-        }
-        if self.link_state() == LinkState::Attached {
-            self.poll_link();
-        }
-    }
-
-    // registers with the manager the table belongs to; on failure the mod keeps its default settings and one line
-    // is logged. Only a Waiting runtime takes the result: if disable ran meanwhile, a new link is dropped again
-    pub fn attach_with(&self, table: Result<ApiTable, LinkError>) -> LinkState {
+    // enable: the settings come from this link once it is connected; without one the defaults stay
+    pub fn attach(&self, link: Option<HeadsLink>) {
         let mut slot = self.link.lock().unwrap_or_else(PoisonError::into_inner);
-        let link = table.and_then(|table| HeadsLink::new(table, &self.config_dir));
-        let (state, link) = match link {
-            Ok(link) => (LinkState::Attached, Some(link)),
-            Err(error) => {
-                Self::log_link_error(&error);
-                (LinkState::Off, None)
-            }
-        };
-        let waiting = LinkState::Waiting.to_u8();
-        match self.link_state.compare_exchange(waiting, state.to_u8(), Ordering::SeqCst, Ordering::SeqCst) {
-            Ok(_) => {
-                if let Some(link) = &link {
-                    self.apply_settings(link.settings());
-                }
-                *slot = link;
-                if state == LinkState::Attached {
-                    self.flush_turned_off();
-                }
-                state
-            }
-            Err(current) => LinkState::from_u8(current),
-        }
+        *slot = link;
+        self.configured.store(false, Ordering::Relaxed);
     }
 
-    // writes the held features to the manager log, once per enable: the manager sink exists after an attach
-    fn flush_turned_off(&self) {
-        let held = std::mem::take(&mut *self.turned_off.lock().unwrap_or_else(PoisonError::into_inner));
-        for item in held {
-            curia::error!("game entry missing or unusable, feature turned off", {
-                feature: item.feature,
-                entry: item.entry
-            });
-        }
-    }
-
-    // reads the manager events and applies new settings to the render state
-    pub fn poll_link(&self) {
-        let mut slot = self.link.lock().unwrap_or_else(PoisonError::into_inner);
-        if let Some(link) = slot.as_mut()
-            && link.poll()
-        {
-            self.apply_settings(link.settings());
-        }
-    }
-
-    // new settings reach the render state and the chat state
-    fn apply_settings(&self, settings: HeadsSettings) {
-        ChatRuntime::set_chat(settings.chat);
-        RenderRuntime::set_settings(settings);
-    }
-
-    // disable: no tick reaches the manager until the next enable; dropping the link unregisters
+    // disable: the link closes, the faces and the icons go
     pub fn detach(&self) {
-        self.link_state.store(LinkState::Disabled.to_u8(), Ordering::SeqCst);
         drop(self.link.lock().unwrap_or_else(PoisonError::into_inner).take());
+        self.world_left();
     }
 
-    pub fn set_observer(&self, observer: PacketObserver) {
-        *self.observer.write().unwrap_or_else(PoisonError::into_inner) = Some(observer);
-    }
-
-    pub fn clear_observer(&self) {
-        *self.observer.write().unwrap_or_else(PoisonError::into_inner) = None;
-    }
-
-    /// Sends the faces of a PlayerListPacket on. Skipped while the observer is being replaced.
-    ///
-    /// # Safety
-    /// `packet` must be null or a live PlayerListPacket for the call, which the packet handler detour guarantees.
-    pub unsafe fn observe_list(&self, packet: usize) {
-        if let Ok(guard) = self.observer.try_read()
-            && let Some(observer) = guard.as_ref()
-        {
-            // SAFETY: the caller guarantees the packet is live for the call.
-            unsafe { observer.on_player_list(packet) };
+    // once per client tick on the game thread
+    pub fn tick(&self) {
+        self.poll_link();
+        if !Self::wait(&self.upload_wait) {
+            self.flush_uploads();
         }
+        self.register_icons();
     }
 
-    /// Sends the face of a PlayerSkinPacket on.
-    ///
-    /// # Safety
-    /// `packet` must be null or a live PlayerSkinPacket for the call, which the packet handler detour guarantees.
-    pub unsafe fn observe_skin(&self, packet: usize) {
-        if let Ok(guard) = self.observer.try_read()
-            && let Some(observer) = guard.as_ref()
-        {
-            // SAFETY: the caller guarantees the packet is live for the call.
-            unsafe { observer.on_player_skin(packet) };
+    // a player list packet was handled
+    pub fn on_player_list(&self, event: &PlayerListUpdate) {
+        let action = event.action();
+        let mut entries = 0usize;
+        for entry in event.entries() {
+            entries += 1;
+            match action {
+                PlayerListAction::Add => self.add_entry(&entry),
+                PlayerListAction::Remove => self.apply_face(FaceUpdate::Remove { uuid: entry.uuid().0 }),
+            }
         }
+        self.flush_uploads();
+        let action = if action == PlayerListAction::Add { "add" } else { "remove" };
+        self.log.info("heads player list", &[("action", action), ("entries", &entries.to_string())]);
     }
 
-    // the world was left: every face and texture goes. A full channel cannot take the update, so the render state
-    // is cleared directly
-    pub fn clear_faces(&self) {
-        let queued = match self.observer.try_read() {
-            Ok(guard) => guard.as_ref().map(PacketObserver::send_clear),
-            Err(_) => Some(false),
+    // a player skin packet was handled
+    pub fn on_player_skin(&self, event: &PlayerSkinChanged) {
+        let (Some(uuid), Some(skin)) = (event.uuid(), event.skin()) else { return };
+        let uuid = uuid.0;
+        let read = FaceReader::read(&skin);
+        self.diagnostics.record("PlayerSkin", uuid, None, &skin, &read);
+        let Some(face) = read.face else { return };
+        self.log.info("heads skin changed", &[("uuid", &Self::short_id(&uuid)), ("source", read.source)]);
+        let icon = Box::new(IconSampler::sample(&face));
+        self.lock_chat().on_skin(uuid, icon);
+        self.apply_face(FaceUpdate::Skin { uuid, face });
+        self.flush_uploads();
+    }
+
+    // one waypoint icon of the locator bar is about to be drawn: a player with a face gets it in place of the dot
+    pub fn icon(&self, event: &mut LocatorBarIconDraw) {
+        if !self.settings.enabled() {
+            return;
+        }
+        let Some(actor) = event.actor() else { return };
+        let texture = match self.faces.try_lock() {
+            Ok(mut faces) => faces.texture_for(actor.0),
+            Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner().texture_for(actor.0),
+            Err(TryLockError::WouldBlock) => None,
         };
-        if queued == Some(false) {
-            RenderRuntime::request_clear();
+        let Some(texture) = texture else { return };
+        let rect = event.rect();
+        let scaled = QuadScaler::scale(IconRect::new(rect.x, rect.y, rect.width, rect.height), self.settings.scale());
+        event.replace_texture(texture);
+        event.set_rect(Rect { x: scaled.x, y: scaled.y, width: scaled.w, height: scaled.h });
+        event.set_color(Rgba { r: 255, g: 255, b: 255, a: 255 });
+        self.note_drawn(actor.0, texture);
+    }
+
+    // a chat line was built: the face glyph of its sender goes before the name
+    pub fn chat_line(&self, event: &ChatMessageAdded) {
+        let kind = MessageKind::from_raw(i32::try_from(event.kind().0).unwrap_or(-1));
+        let show = self.settings.chat() && event.inline_icons();
+        let Some(full) = event.text() else { return };
+        let line =
+            ChatLine { kind, full, username: event.username().unwrap_or(""), author_xuid: event.xuid().unwrap_or("") };
+        let (text, filtered) = {
+            let board = match self.chat_board.try_lock() {
+                Ok(board) => board,
+                Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+                Err(TryLockError::WouldBlock) => return,
+            };
+            let filtered = event.filtered_text().and_then(|full| board.glyph_line(&ChatLine { full, ..line }, show));
+            (board.glyph_line(&line, show), filtered)
+        };
+        let mut edited = false;
+        if let Some(text) = text {
+            edited |= event.set_text(&text).is_ok();
+        }
+        if let Some(filtered) = filtered {
+            edited |= event.set_filtered_text(&filtered).is_ok();
+        }
+        if edited && self.edit_lines.take() {
+            self.log.info("heads chat line edited", &[("kind", &event.kind().0.to_string())]);
         }
     }
 
-    // keeps an installed hook; false, keeping nothing, when HOOK_CAPACITY hooks are already kept
-    pub fn keep_hook(&self, hook: HookHandle) -> bool {
-        let mut hooks = self.hooks.lock().unwrap_or_else(PoisonError::into_inner);
-        if hooks.len() >= Self::HOOK_CAPACITY {
-            return false;
-        }
-        hooks.push(hook);
-        true
-    }
-
-    // the installed hooks, newest first, leaving none behind
-    pub fn take_hooks(&self) -> Vec<HookHandle> {
-        self.take_hooks_since(0)
-    }
-
-    pub fn hook_count(&self) -> usize {
-        self.hooks.lock().unwrap_or_else(PoisonError::into_inner).len()
-    }
-
-    // the hooks kept after the first `count`, newest first; the first `count` stay
-    pub fn take_hooks_since(&self, count: usize) -> Vec<HookHandle> {
-        let mut hooks = self.hooks.lock().unwrap_or_else(PoisonError::into_inner);
-        let at = count.min(hooks.len());
-        let mut taken = hooks.split_off(at);
-        taken.reverse();
-        taken
-    }
-
-    fn log_link_error(error: &LinkError) {
-        let Some(runtime) = ModRuntime::get() else { return };
-        match error {
-            LinkError::ManagerMissing | LinkError::AbiMismatch { .. } => {
-                runtime.logger().warn("amml_modmanager.dll (ABI 2.x) was not found; the heads mod uses its defaults");
+    // the loader bound or freed the mod textures. After a device reset every texture id is stale, so each face is
+    // uploaded again at once. After a resource pack change the ids stay valid and the loader keeps the pixels of an
+    // upload, so no face is touched. The inline icons live on a page the loader owns and uploads again itself
+    pub fn textures_reloaded(&self, event: &TexturesReloaded) {
+        let reason = event.reason();
+        let (name, uploaded) = match reason {
+            TextureReload::DeviceReset => {
+                self.lock_faces().invalidate_textures();
+                self.upload_wait.store(0, Ordering::Relaxed);
+                ("device_reset", self.flush_uploads())
             }
-            other => {
-                runtime
-                    .logger()
-                    .warn(&format!("@amml/modmanager refused @alaydriem/heads ({other}); using the defaults"));
+            TextureReload::ResourcePack => ("resource_pack", 0),
+            TextureReload::Other => ("other", 0),
+        };
+        self.log.info("heads textures reloaded", &[("reason", name), ("reuploaded", &uploaded.to_string())]);
+    }
+
+    // the world is being left: every face, texture and icon goes
+    pub fn world_left(&self) {
+        self.apply_face(FaceUpdate::Clear);
+        self.lock_chat().clear();
+        self.log.info("heads world left", &[("faces", &self.face_count().to_string())]);
+    }
+
+    fn add_entry(&self, entry: &PlayerListEntry<'_>) {
+        let Some(actor) = entry.actor_id() else { return };
+        let uuid = entry.uuid().0;
+        let identity = Self::identity(entry);
+        if let Some((name, xuid)) = &identity {
+            self.lock_chat().on_identity(uuid, xuid, name);
+        }
+        let Some(skin) = entry.skin() else { return };
+        let read = FaceReader::read(&skin);
+        self.diagnostics.record("PlayerList.Add", uuid, Some(actor.0), &skin, &read);
+        let Some(face) = read.face else { return };
+        if self.ready_lines.take() {
+            self.log.info("heads face ready", &[("source", read.source), ("head", read.head_source)]);
+        }
+        if let Some((name, xuid)) = &identity {
+            let icon = Box::new(IconSampler::sample(&face));
+            let mut board = self.lock_chat();
+            board.on_face(uuid, xuid, name, icon);
+            if board.full_reported() {
+                self.log.warn("heads chat head icons are full", &[]);
             }
         }
+        self.apply_face(FaceUpdate::Add { uuid, actor: actor.0, face });
+    }
+
+    // the name and XUID of an Add entry, or `None` when one is missing or too long
+    fn identity(entry: &PlayerListEntry<'_>) -> Option<(String, String)> {
+        let (name, xuid) = (entry.name()?, entry.xuid()?);
+        (name.len() <= Self::MAX_IDENTITY && xuid.len() <= Self::MAX_IDENTITY)
+            .then(|| (name.to_owned(), xuid.to_owned()))
+    }
+
+    // one update to the faces; the textures it frees are unloaded after the lock is given up
+    fn apply_face(&self, update: FaceUpdate) {
+        let released = {
+            let mut faces = self.lock_faces();
+            faces.apply(update);
+            faces.take_released()
+        };
+        self.unload(released);
+    }
+
+    // uploads the faces that still wait for a texture
+    fn flush_uploads(&self) -> usize {
+        let mut uploaded = 0;
+        if !self.settings.enabled() {
+            return uploaded;
+        }
+        let mut jobs: Vec<(FaceKey, Box<FaceImage>)> = Vec::new();
+        {
+            let mut faces = self.lock_faces();
+            if !faces.has_pending_upload() {
+                return uploaded;
+            }
+            faces.take_pending(&mut jobs);
+        }
+        let mut refused = false;
+        for (key, face) in jobs {
+            if refused {
+                self.lock_faces().retry_upload(key);
+                continue;
+            }
+            match self.textures.upload_rgba(FaceImage::SIDE, FaceImage::SIDE, &face.pixels) {
+                Ok(texture) => {
+                    self.upload_failed.store(false, Ordering::Relaxed);
+                    uploaded += 1;
+                    self.store_texture(key, texture);
+                }
+                Err(error) => {
+                    refused = true;
+                    self.lock_faces().retry_upload(key);
+                    if !self.upload_failed.swap(true, Ordering::Relaxed) {
+                        self.log.warn("heads face upload refused", &[("error", &error.to_string())]);
+                    }
+                    self.upload_wait.store(Self::RETRY_TICKS, Ordering::Relaxed);
+                }
+            }
+        }
+        uploaded
+    }
+
+    fn store_texture(&self, key: FaceKey, texture: TextureId) {
+        let stale = self.lock_faces().attach(key, texture);
+        if self.uploaded_lines.take() {
+            self.log.info("heads face uploaded", &[("actor", &key.actor.to_string())]);
+        }
+        if let Some(stale) = stale {
+            self.unload(vec![stale]);
+        }
+    }
+
+    fn unload(&self, textures: Vec<TextureId>) {
+        for texture in textures {
+            // a texture of a world that was left is stale already: the loader freed it
+            let _ = self.textures.unload(texture);
+        }
+    }
+
+    // registers the icons that wait for the game thread
+    fn register_icons(&self) {
+        let (done, full) = {
+            let mut board = self.lock_chat();
+            if board.waiting() == 0 || Self::wait(&self.icon_wait) {
+                return;
+            }
+            let done = board.register_waiting(&self.chat, Self::ICONS_PER_TICK);
+            if board.waiting() > 0 && done.len() < Self::ICONS_PER_TICK {
+                self.icon_wait.store(Self::RETRY_TICKS, Ordering::Relaxed);
+            }
+            (done, board.full_reported())
+        };
+        for (glyph, new) in done {
+            if new && self.icon_lines.take() {
+                self.log.info("heads chat icon registered", &[("glyph", &format!("U+{:04X}", glyph as u32))]);
+            }
+        }
+        if full {
+            self.log.warn("heads chat head icons are full", &[]);
+        }
+    }
+
+    // reads the settings once the link is connected, then the manager events
+    fn poll_link(&self) {
+        let mut slot = self.link.lock().unwrap_or_else(PoisonError::into_inner);
+        let Some(link) = slot.as_mut() else { return };
+        let connected = link.state() == LinkState::Connected;
+        let mut reload = connected && !self.configured.swap(true, Ordering::Relaxed);
+        reload |= link.poll() && connected;
+        if reload {
+            let settings = link.settings();
+            self.settings.store(settings);
+            self.log.info(
+                "heads settings applied",
+                &[
+                    ("enabled", &settings.enabled.to_string()),
+                    ("scale", &settings.scale().to_string()),
+                    ("chat", &settings.chat.to_string()),
+                ],
+            );
+        }
+    }
+
+    fn note_drawn(&self, actor: i64, texture: TextureId) {
+        if !self.drawn.load(Ordering::Relaxed)
+            && self.textures.ready(texture)
+            && !self.drawn.swap(true, Ordering::Relaxed)
+        {
+            self.log.info("heads icon face drawn", &[("actor", &actor.to_string())]);
+        }
+    }
+
+    // true while ticks are left to wait; spends one
+    fn wait(ticks: &AtomicU32) -> bool {
+        ticks.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |left| left.checked_sub(1)).is_ok()
+    }
+
+    fn lock_faces(&self) -> MutexGuard<'_, FaceBoard> {
+        self.faces.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn lock_chat(&self) -> MutexGuard<'_, ChatBoard> {
+        self.chat_board.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    // the first four bytes of the uuid as 8 hex digits
+    fn short_id(uuid: &[u8; 16]) -> String {
+        uuid[..4].iter().map(|byte| format!("{byte:02x}")).collect()
     }
 }

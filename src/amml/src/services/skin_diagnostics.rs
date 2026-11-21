@@ -1,126 +1,63 @@
-#![allow(unsafe_code)]
-
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
 
-use super::{MemoryReader, StdStringReader};
-use crate::layouts::ImageLayout;
-use crate::structs::{PacketOffsets, SkinEvent, SkinReport};
+use amml_api::{Logger, SkinRef};
 use heads_core::structs::UvRect;
+
+use crate::structs::FaceRead;
 
 /// Shows where a skin stops being a face: one log line per player for the first `LOG_LIMIT` players of a session.
 pub struct SkinDiagnostics {
+    log: Logger,
     // the players already logged; holds at most LOG_LIMIT entries
     seen: Mutex<Vec<[u8; 16]>>,
-    logged: AtomicUsize,
 }
 
 impl SkinDiagnostics {
     pub const LOG_LIMIT: usize = 64;
-    // longest string read from game memory, and most animated images listed
-    const MAX_STRING: usize = 4096;
-    const MAX_ANIMATED: usize = 16;
 
-    pub fn new() -> Self {
-        Self { seen: Mutex::new(Vec::with_capacity(Self::LOG_LIMIT)), logged: AtomicUsize::new(0) }
+    pub fn new(log: Logger) -> Self {
+        Self { log, seen: Mutex::new(Vec::with_capacity(Self::LOG_LIMIT)) }
     }
 
     /// How many players were logged.
     pub fn logged(&self) -> usize {
-        self.logged.load(Ordering::Relaxed)
-    }
-
-    /// Reads what the skin behind a `SerializedSkinRef` holds. `None` when a link is null.
-    ///
-    /// # Safety
-    /// `skin_ref` must be null or the address of a live `shared_ptr` to a `SerializedSkinImpl` laid out as
-    /// `offsets` says; the packet detour that holds the skin guarantees it for the call.
-    pub unsafe fn inspect(skin_ref: usize, offsets: &PacketOffsets) -> Option<SkinReport> {
-        // SAFETY: the caller guarantees `skin_ref` is null or a live shared_ptr, whose first word is the element.
-        let element: usize = unsafe { MemoryReader::read(skin_ref)? };
-        if element == 0 {
-            return None;
-        }
-        // SAFETY: the element is a live SerializedSkinImpl and `skin_image` is inside it.
-        let image: ImageLayout = unsafe { MemoryReader::read(element.checked_add(offsets.skin.image)?)? };
-        let expected = u64::from(image.width) * u64::from(image.height) * 4;
-        // SAFETY: the flags and strings are inside the live SerializedSkinImpl.
-        let (is_premium, is_persona, default_geometry, resource_patch_len, animated_types) = unsafe {
-            (
-                offsets
-                    .skin
-                    .is_premium
-                    .is_some_and(|offset| MemoryReader::read::<u8>(element + offset).is_some_and(|flag| flag != 0)),
-                offsets
-                    .skin
-                    .is_persona
-                    .is_some_and(|offset| MemoryReader::read::<u8>(element + offset).is_some_and(|flag| flag != 0)),
-                offsets
-                    .skin
-                    .default_geometry_name
-                    .map_or_else(|| "<unavailable>".to_string(), |offset| Self::string(element + offset)),
-                offsets.skin.resource_patch.map_or(0, |offset| Self::string_len(element + offset)),
-                Self::animated_types(element, offsets),
-            )
-        };
-        Some(SkinReport {
-            width: image.width,
-            height: image.height,
-            format: image.format,
-            blob_size: image.blob_size,
-            size_matches: expected == image.blob_size as u64,
-            is_persona,
-            is_premium,
-            default_geometry,
-            resource_patch_len,
-            animated_types,
-        })
+        self.seen.lock().unwrap_or_else(PoisonError::into_inner).len()
     }
 
     /// Logs the skin of a player the first time it is seen, up to `LOG_LIMIT` players.
-    ///
-    /// # Safety
-    /// As for `inspect`, for `event.skin_ref`.
-    pub unsafe fn record(&self, event: &SkinEvent, offsets: &PacketOffsets) {
-        if offsets.skin.resource_patch.is_none() || offsets.skin.is_premium.is_none() {
+    pub fn record(&self, kind: &str, uuid: [u8; 16], actor: Option<i64>, skin: &SkinRef<'_>, read: &FaceRead) {
+        if !self.claim(uuid) {
             return;
         }
-        if self.logged.load(Ordering::Relaxed) >= Self::LOG_LIMIT || !self.claim(event.uuid) {
-            return;
+        let actor = actor.map_or_else(|| "none".to_string(), |actor| actor.to_string());
+        let mut fields = vec![
+            ("kind", kind.to_string()),
+            ("uuid", Self::short_id(&uuid)),
+            ("actor", actor),
+            ("outcome", read.outcome.clone()),
+            ("head_source", read.head_source.to_string()),
+            ("face_rect", Self::rect(read.head.face)),
+            ("hat_rect", read.head.hat.map_or_else(|| "none".to_string(), Self::rect)),
+            ("geometry_json_len", read.geometry_json_len.map_or_else(|| "none".to_string(), |len| len.to_string())),
+        ];
+        match skin.image() {
+            Some(image) => {
+                fields.push(("width", image.width.to_string()));
+                fields.push(("height", image.height.to_string()));
+                fields.push(("format", u32::from(image.format).to_string()));
+                fields.push(("blob_size", image.pixels.len().to_string()));
+            }
+            None => fields.push(("unreadable", "true".to_string())),
         }
-        // SAFETY: the caller guarantees the skin reference is live.
-        let report = unsafe { Self::inspect(event.skin_ref, offsets) };
-        let uuid = Self::short_id(&event.uuid);
-        match report {
-            Some(report) => curia::info!("skin read", {
-                kind: event.kind,
-                uuid: uuid.clone(),
-                actor: event.actor,
-                width: report.width,
-                height: report.height,
-                format: report.format,
-                blob_size: report.blob_size,
-                size_matches: report.size_matches,
-                is_persona: report.is_persona,
-                is_premium: report.is_premium,
-                default_geometry: report.default_geometry,
-                resource_patch_len: report.resource_patch_len,
-                animated_images: report.animated_types.len(),
-                animated_types: report.animated_types,
-                outcome: event.outcome.clone(),
-                head_source: event.head_source,
-                face_rect: Self::rect(event.head.face),
-                hat_rect: event.head.hat.map(Self::rect),
-                geometry_json_len: event.geometry_json.map(str::len),
-            }),
-            None => curia::info!("skin read", {
-                kind: event.kind,
-                uuid: uuid.clone(),
-                actor: event.actor,
-                unreadable: true,
-                outcome: event.outcome.clone(),
-            }),
-        }
+        fields.push(("is_persona", Self::flag(skin.is_persona())));
+        fields.push(("is_premium", Self::flag(skin.is_premium())));
+        fields.push(("default_geometry", skin.default_geometry_name().unwrap_or("<unavailable>").to_string()));
+        fields.push(("resource_patch_len", skin.resource_patch().map_or(0, str::len).to_string()));
+        let kinds: Vec<String> = skin.animated_images().map(|(kind, _)| u32::from(kind).to_string()).collect();
+        fields.push(("animated_images", kinds.len().to_string()));
+        fields.push(("animated_types", kinds.join(",")));
+        let borrowed: Vec<(&str, &str)> = fields.iter().map(|(key, value)| (*key, value.as_str())).collect();
+        self.log.info("heads skin read", &borrowed);
     }
 
     // records the player; false when it was seen before or the log is full
@@ -130,56 +67,19 @@ impl SkinDiagnostics {
             return false;
         }
         seen.push(uuid);
-        self.logged.store(seen.len(), Ordering::Relaxed);
         true
     }
 
-    fn rect(rect: UvRect) -> [f32; 4] {
-        [rect.x, rect.y, rect.w, rect.h]
+    fn flag(flag: Option<bool>) -> String {
+        flag.map_or_else(|| "unavailable".to_string(), |flag| flag.to_string())
+    }
+
+    fn rect(rect: UvRect) -> String {
+        format!("{},{},{},{}", rect.x, rect.y, rect.w, rect.h)
     }
 
     // the first four bytes of the uuid as 8 hex digits
     fn short_id(uuid: &[u8; 16]) -> String {
         uuid[..4].iter().map(|byte| format!("{byte:02x}")).collect()
-    }
-
-    // the text of a std::string member, or a marker when it does not look sane
-    unsafe fn string(address: usize) -> String {
-        // SAFETY: the caller passes the address of a std::string member of the live SerializedSkinImpl.
-        unsafe { StdStringReader::text(address, Self::MAX_STRING) }.unwrap_or_else(|| "<invalid>".to_string())
-    }
-
-    // the length of a std::string, 0 when it does not look sane
-    unsafe fn string_len(address: usize) -> usize {
-        // SAFETY: as for `string`.
-        unsafe { StdStringReader::size(address) }.unwrap_or(0)
-    }
-
-    // the mType of each element of mSkinAnimatedImages, at most MAX_ANIMATED of them
-    unsafe fn animated_types(element: usize, offsets: &PacketOffsets) -> Vec<u32> {
-        let Some(animated) = offsets.skin.animated.as_ref() else {
-            return Vec::new();
-        };
-        // SAFETY: the vector is a member of the live SerializedSkinImpl.
-        let Some([first, last]) = (unsafe { MemoryReader::read::<[usize; 2]>(element + animated.list) }) else {
-            return Vec::new();
-        };
-        if first == 0 || last < first || animated.stride == 0 {
-            return Vec::new();
-        }
-        let count = ((last - first) / animated.stride).min(Self::MAX_ANIMATED);
-        (0..count)
-            .filter_map(|index| {
-                let address = first + index * animated.stride + animated.kind;
-                // SAFETY: the element lies inside the live vector.
-                unsafe { MemoryReader::read::<u32>(address) }
-            })
-            .collect()
-    }
-}
-
-impl Default for SkinDiagnostics {
-    fn default() -> Self {
-        Self::new()
     }
 }
