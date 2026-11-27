@@ -1,16 +1,15 @@
-//! @alaydriem/heads as an AMML mod: reads player skins from packets and draws their faces on the locator bar.
+//! @alaydriem/heads as an AMML mod: reads player skins from the loader's network events and shows each player's face
+//! on the locator bar and in chat.
 
 #![deny(unsafe_code)]
 
-pub mod detours;
-pub mod entries;
+#[forbid(unsafe_code)]
 pub mod heads_mod;
-pub mod layouts;
+#[forbid(unsafe_code)]
 pub mod services;
+#[forbid(unsafe_code)]
 pub mod structs;
-pub mod traits;
-pub mod types;
 
 pub use heads_mod::HeadsMod;
 
-amml_sdk::amml_mod!(HeadsMod);
+amml_api::amml_mod!(HeadsMod);

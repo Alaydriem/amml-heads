@@ -1,92 +1,61 @@
-use alaydriem_heads::services::{PacketObserver, SkinDiagnostics};
-use alaydriem_heads::structs::{PacketOffsets, SkinReport};
-use crossbeam_channel::bounded;
+use std::sync::Arc;
 
-use crate::support::{FakeEntry, FakeLayout, FakePacket, FakeSkin};
+use alaydriem_heads::services::{FaceReader, SkinDiagnostics};
+use amml_api::amml_abi::PlayerSkinChanged;
+use amml_api::testing::{FakeGame, FakeSkin};
+use amml_api::{HookOrder, PlayerSkinChangedExt, Uuid};
 
-fn offsets() -> PacketOffsets {
-    FakeLayout::packet_offsets()
-}
+use crate::support::heads_rig::HeadsRig;
+use crate::support::skins::Skins;
 
-fn many_players(count: u8, skin: &FakeSkin) -> FakePacket {
-    let entries: Vec<FakeEntry> =
-        (0..count).map(|n| FakeEntry { variant: 1, uuid: [n; 16], actor: i64::from(n), skin: Some(skin) }).collect();
-    FakePacket::player_list(&entries)
-}
-
-fn observer(diagnostics: SkinDiagnostics) -> PacketObserver {
-    let (sender, receiver) = bounded(256);
-    // the receiver stays open for the test
-    std::mem::forget(receiver);
-    PacketObserver::new_with_diagnostics(sender, offsets(), diagnostics)
-}
-
-#[test]
-fn inspect_reads_flags_strings_and_animated_images() {
-    let mut skin = FakeSkin::rgba(64, 64, [1, 2, 3, 255]);
-    skin.mark(false, true);
-    skin.set_strings("geometry.custom", 120);
-    skin.set_animated(&[1, 2]);
-
-    // SAFETY: the fake skin lives for the call and has the 26.60 layout.
-    let report = unsafe { SkinDiagnostics::inspect(skin.skin_ref(), &offsets()) }.unwrap();
-
-    assert_eq!(
-        report,
-        SkinReport {
-            width: 64,
-            height: 64,
-            format: 4,
-            blob_size: 64 * 64 * 4,
-            size_matches: true,
-            is_persona: true,
-            is_premium: false,
-            default_geometry: "geometry.custom".to_string(),
-            resource_patch_len: 120,
-            animated_types: vec![1, 2],
-        }
-    );
-}
-
-#[test]
-fn inspect_reports_a_size_mismatch_and_survives_a_null_ref() {
-    let skin = FakeSkin::new(128, 128, 4, 100, [1, 2, 3, 255]);
-
-    // SAFETY: the fake skin lives for the call; a null reference is rejected before any read.
-    let report = unsafe { SkinDiagnostics::inspect(skin.skin_ref(), &offsets()) };
-    // SAFETY: a null reference is rejected before any read.
-    let none = unsafe { SkinDiagnostics::inspect(0, &offsets()) };
-
-    assert!(!report.unwrap().size_matches);
-    assert!(none.is_none());
-}
-
-#[test]
-fn logs_at_most_64_players() {
-    let skin = FakeSkin::rgba(64, 64, [1, 2, 3, 255]);
-    let observer = observer(SkinDiagnostics::new());
-    let packet = many_players(70, &skin);
-
-    // SAFETY: the fake packet and skin live for the calls and match the 26.60 layout.
-    unsafe {
-        observer.on_player_list(packet.addr());
-        observer.on_player_list(packet.addr());
+// raises a skin change for each `(uuid byte, skin)` and records it with the diagnostics of the game
+fn record_all(skins: Vec<(u8, FakeSkin)>) -> (FakeGame, Arc<SkinDiagnostics>) {
+    let game = HeadsRig::served_game();
+    let diagnostics = Arc::new(SkinDiagnostics::new(game.ctx().log()));
+    let sink = diagnostics.clone();
+    let _listener = game
+        .ctx()
+        .events()
+        .listen::<PlayerSkinChanged>(HookOrder::NORMAL, move |event, _| {
+            if let (Some(uuid), Some(skin)) = (event.uuid(), event.skin()) {
+                let read = FaceReader::read(&skin);
+                sink.record("PlayerSkin", uuid.0, None, &skin, &read);
+            }
+        })
+        .unwrap();
+    for (byte, skin) in skins {
+        game.raise_skin(Uuid([byte; 16]), Some(skin));
     }
-
-    assert_eq!(observer.diagnostics().logged(), SkinDiagnostics::LOG_LIMIT);
+    (game, diagnostics)
 }
 
 #[test]
-fn a_repeated_player_is_logged_once() {
-    let skin = FakeSkin::rgba(64, 64, [1, 2, 3, 255]);
-    let observer = observer(SkinDiagnostics::new());
-    let packet = many_players(1, &skin);
+fn a_player_is_logged_once_with_what_the_skin_holds() {
+    let (game, diagnostics) = record_all(vec![(1, Skins::persona([0, 0, 255])), (1, Skins::persona([0, 0, 255]))]);
 
-    // SAFETY: the fake packet and skin live for the calls and match the 26.60 layout.
-    unsafe {
-        observer.on_player_list(packet.addr());
-        observer.on_player_list(packet.addr());
+    assert_eq!(diagnostics.logged(), 1);
+    let logs = game.logs();
+    let line = logs.iter().find(|line| line.starts_with("info heads skin read ")).unwrap();
+    for field in ["kind=PlayerSkin", "uuid=01010101", "outcome=Ok", "is_persona=true", "animated_types=1", "width=64"] {
+        assert!(line.contains(field), "{field} in {line}");
     }
+}
 
-    assert_eq!(observer.diagnostics().logged(), 1);
+#[test]
+fn the_log_stops_at_64_players() {
+    let skins = (0..70).map(|byte| (byte, Skins::classic([1, 2, 3]))).collect();
+
+    let (game, diagnostics) = record_all(skins);
+
+    assert_eq!(diagnostics.logged(), SkinDiagnostics::LOG_LIMIT);
+    assert_eq!(game.logs().iter().filter(|line| line.starts_with("info heads skin read ")).count(), 64);
+}
+
+#[test]
+fn a_skin_without_an_image_is_logged_as_unreadable() {
+    let (game, _) = record_all(vec![(3, Skins::unreadable())]);
+
+    let logs = game.logs();
+    let line = logs.iter().find(|line| line.starts_with("info heads skin read ")).unwrap();
+    assert!(line.contains("unreadable=true") && line.contains("outcome=SkinNotReadable"), "{line}");
 }

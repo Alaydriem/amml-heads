@@ -50,3 +50,12 @@ fn a_removed_player_is_gone() {
 
     assert_eq!(recent.iter().collect::<Vec<_>>(), vec![(uuid(2), "x2", "p2")]);
 }
+
+#[test]
+fn clear_forgets_every_player() {
+    let mut recent = filled();
+
+    recent.clear();
+
+    assert!(recent.is_empty());
+}

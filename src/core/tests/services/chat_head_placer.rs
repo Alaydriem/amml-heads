@@ -1,42 +1,38 @@
-use std::sync::Arc;
-
-use heads_core::services::{CellFlags, ChatHeadPlacer, GlyphCells, PlayerDirectory};
-use heads_core::structs::{ChatLine, MessageKind};
+use heads_core::services::{ChatHeadPlacer, FaceGlyphs, PlayerDirectory};
+use heads_core::structs::{ChatLine, GlyphCell, MessageKind};
 
 fn uuid(n: u8) -> [u8; 16] {
     [n; 16]
 }
 
 struct World {
-    cells: GlyphCells,
+    glyphs: FaceGlyphs,
     directory: PlayerDirectory,
 }
 
 impl World {
     fn new(players: &[(u8, &str, &str, bool)]) -> World {
-        let mut cells = GlyphCells::new(Arc::new(CellFlags::new()));
+        let mut glyphs = FaceGlyphs::new();
         let mut directory = PlayerDirectory::new();
-        for (n, xuid, name, face) in players {
+        for (index, (n, xuid, name, face)) in players.iter().enumerate() {
             directory.record(uuid(*n), xuid, name);
-            if let Some(cell) = cells.cell_for(uuid(*n))
-                && *face
-            {
-                cells.mark_face(cell);
+            if *face {
+                glyphs.set(uuid(*n), GlyphCell(index as u8).codepoint());
             }
         }
-        World { cells, directory }
+        World { glyphs, directory }
     }
 
     fn place(&self, kind: MessageKind, full: &str, username: &str, xuid: &str) -> Option<usize> {
-        ChatHeadPlacer::place(&ChatLine { kind, full, username, author_xuid: xuid }, &self.cells, &self.directory)
+        ChatHeadPlacer::place(&ChatLine { kind, full, username, author_xuid: xuid }, &self.glyphs, &self.directory)
     }
 
     fn glyph(&self, kind: MessageKind, full: &str, username: &str, xuid: &str) -> Option<char> {
-        ChatHeadPlacer::glyph_for(&ChatLine { kind, full, username, author_xuid: xuid }, &self.cells, &self.directory)
+        ChatHeadPlacer::glyph_for(&ChatLine { kind, full, username, author_xuid: xuid }, &self.glyphs, &self.directory)
     }
 
     fn edit(&self, kind: MessageKind, full: &str, username: &str, xuid: &str) -> Option<String> {
-        ChatHeadPlacer::edit(&ChatLine { kind, full, username, author_xuid: xuid }, &self.cells, &self.directory)
+        ChatHeadPlacer::edit(&ChatLine { kind, full, username, author_xuid: xuid }, &self.glyphs, &self.directory)
     }
 }
 

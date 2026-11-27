@@ -27,6 +27,33 @@ fn add_with_texture(store: &mut FaceStore<u32>, n: u8, actor: i64, texture: u32,
 }
 
 #[test]
+fn invalidating_the_textures_queues_every_face_again_and_refuses_a_key_from_before() {
+    let mut store = FaceStore::new(4, 8);
+    let mut released = Vec::new();
+    add_with_texture(&mut store, 1, 1, 11, &mut released);
+    add_with_texture(&mut store, 2, 2, 12, &mut released);
+    add(&mut store, 3, 3, &mut released);
+    store.begin_frame();
+    let in_flight = next_key(&mut store).unwrap();
+    assert_eq!(in_flight.actor, 3);
+
+    let held = store.invalidate_textures();
+
+    assert_eq!(held, 2);
+    assert!(released.is_empty());
+    assert!(store.texture_for(1).is_none());
+    assert!(store.texture_for(2).is_none());
+    assert_eq!(store.attach(in_flight, 33), Some(33));
+    store.begin_frame();
+    let mut actors = Vec::new();
+    while let Some(key) = next_key(&mut store) {
+        actors.push(key.actor);
+    }
+    actors.sort_unstable();
+    assert_eq!(actors, vec![1, 2, 3]);
+}
+
+#[test]
 fn evicts_least_recent_past_capacity() {
     let mut store = FaceStore::new(2, 4);
     let mut released = Vec::new();

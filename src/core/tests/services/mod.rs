@@ -1,11 +1,9 @@
 mod chat_head_placer;
 mod face_extractor;
+mod face_glyphs;
 mod face_store;
 mod geometry_head_locator;
-mod glyph_cells;
-mod glyph_page;
+mod icon_sampler;
 mod player_directory;
 mod quad_scaler;
 mod recent_players;
-mod tag_codec;
-mod upload_backoff;
