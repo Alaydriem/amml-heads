@@ -626,7 +626,7 @@ dependencies = [
 
 [[package]]
 name = "heads-amml"
-version = "26.63.4"
+version = "26.63.8"
 dependencies = [
  "amm-client",
  "amm-core",
@@ -638,7 +638,7 @@ dependencies = [
 
 [[package]]
 name = "heads-bench"
-version = "26.63.4"
+version = "26.63.8"
 dependencies = [
  "criterion",
  "heads-core",
@@ -646,7 +646,7 @@ dependencies = [
 
 [[package]]
 name = "heads-core"
-version = "26.63.4"
+version = "26.63.8"
 dependencies = [
  "serde",
  "serde_json",
